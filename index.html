@@ -3,29 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>警備員配置管理システム</title>
+<title>警備員配置管理システム v4</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Noto Sans JP','Hiragino Sans',sans-serif;background:#f8fafc;color:#0f172a;-webkit-text-size-adjust:100%}
-:root{--accent:#1d4ed8;--accent-light:#dbeafe;--danger:#dc2626;--danger-light:#fee2e2;--warn:#d97706;--warn-light:#fef3c7;--success:#059669;--success-light:#d1fae5;--bg:#f8fafc;--bg2:#fff;--bg3:#f1f5f9;--text:#0f172a;--text2:#475569;--border:#e2e8f0}
+:root{--accent:#1d4ed8;--accent-light:#dbeafe;--danger:#dc2626;--danger-light:#fee2e2;--warn:#d97706;--warn-light:#fef3c7;--success:#059669;--success-light:#d1fae5;--bg:#f8fafc;--bg2:#fff;--bg3:#f1f5f9;--text:#0f172a;--text2:#475569;--border:#e2e8f0;--cyan:#0891b2;--cyan-light:#cffafe}
 .container{max-width:960px;margin:0 auto;padding:0 12px 40px}
 .header{display:flex;justify-content:space-between;align-items:center;padding:16px 0 12px;border-bottom:2px solid var(--accent);margin-bottom:12px}
 .header h1{font-size:20px;font-weight:700}
 .header p{font-size:11px;color:var(--text2);margin:2px 0 0}
 .btn{border:none;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:4px;transition:all .2s}
-.btn-primary{background:var(--accent);color:#fff;padding:8px 14px;font-size:13px}
-.btn-outline{border:1px solid var(--border);background:var(--bg2);color:var(--text2);padding:6px 12px;font-size:12px}
+.btn-outline{border:1px solid var(--border);background:var(--bg2);color:var(--text2);padding:6px 12px;font-size:12px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:600}
 .btn-copy{border:1px solid var(--border);background:var(--bg2);color:var(--text2);padding:4px 10px;font-size:11px;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;transition:all .2s}
 .btn-copy.copied{background:#16a34a;color:#fff;border-color:#16a34a}
-.tabs{display:flex;gap:4px;padding:4px;background:var(--bg3);border-radius:14px;margin-bottom:16px;overflow-x:auto}
-.tab{display:flex;align-items:center;gap:6px;padding:10px 14px;border:none;background:transparent;color:var(--text2);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;font-family:inherit}
+.tabs{display:flex;gap:4px;padding:4px;background:var(--bg3);border-radius:14px;margin-bottom:16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{display:flex;align-items:center;gap:5px;padding:9px 12px;border:none;background:transparent;color:var(--text2);border-radius:10px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;font-family:inherit}
 .tab.active{background:var(--accent);color:#fff}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .cal-header{text-align:center;font-size:12px;font-weight:600;padding:6px}
-.cal-cell{min-height:72px;padding:5px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;transition:all .15s}
-.cal-cell.weekend{background:var(--bg3)}
-.cal-cell.selected{border:2px solid var(--accent);background:var(--accent-light)}
-.cal-cell .date{font-size:13px;font-weight:500}
+.cal-cell{min-height:70px;padding:4px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;transition:all .15s}
+.cal-cell.weekend{background:var(--bg3)}.cal-cell.selected{border:2px solid var(--accent);background:var(--accent-light)}
 .cal-cell .today{background:var(--accent);color:#fff;border-radius:6px;padding:1px 5px;font-size:11px;font-weight:700}
 .badge{display:inline-block;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:600}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:16px}
@@ -35,14 +32,16 @@ body{font-family:'Noto Sans JP','Hiragino Sans',sans-serif;background:#f8fafc;co
 .msg-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg3)}
 .msg-body{margin:0;padding:10px 12px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;font-family:'Noto Sans JP',sans-serif}
 .toast{position:fixed;top:20px;right:20px;z-index:999;padding:12px 20px;border-radius:12px;color:#fff;font-size:14px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);animation:slideIn .3s ease}
-.info-box{padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.7;margin-bottom:16px}
-.setup-box{max-width:500px;margin:60px auto;padding:0 16px}
-.setup-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:28px}
+.info-box{padding:12px 16px;border-radius:10px;font-size:13px;line-height:1.7;margin-bottom:12px}
 .all-copy{display:flex;align-items:center;justify-content:center;gap:6px;padding:12px;border:2px solid #16a34a;border-radius:10px;background:#f0fdf4;color:#16a34a;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;width:100%;font-family:inherit}
 .all-copy.copied{background:#16a34a;color:#fff}
-input[type="url"],input[type="date"]{padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
+.att-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.att-tbl th,.att-tbl td{border:1px solid var(--border);padding:6px 8px;text-align:center}
+.att-tbl th{background:var(--cyan);color:#fff;font-size:11px}
+.att-tbl .ok{color:var(--success);font-weight:700}.att-tbl .ng{color:var(--danger);font-weight:700}.att-tbl .pending{color:var(--text2)}
+input[type="date"]{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit}
 @keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
-@media(max-width:600px){.container{padding:0 8px 30px}.header h1{font-size:17px}.cal-cell{min-height:64px;padding:3px}}
+@media(max-width:600px){.container{padding:0 8px 30px}.header h1{font-size:17px}.cal-cell{min-height:62px;padding:3px}.tab{padding:8px 10px;font-size:11px}.att-tbl{font-size:10px}.att-tbl th,.att-tbl td{padding:4px 3px}}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -52,29 +51,47 @@ input[type="url"],input[type="date"]{padding:10px 12px;border:1px solid var(--bo
 var GAS_URL='https://script.google.com/macros/s/AKfycbypqsFHT-OWUVXT6TROxDhqV0reFmqEzlSepTw0qhA6XvIxS9q3bebHFrq-tdiHkzigfQ/exec';
 var D=null,S={tab:'calendar',vy:new Date().getFullYear(),vm:new Date().getMonth(),sd:null,ld:false,er:null,lf:null,ci:null,to:null};
 var DN=['日','月','火','水','木','金','土'],now=new Date(),TD=fd(now);
+
 function fd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function gmd(y,m){var r=[],d=new Date(y,m,1);while(d.getMonth()===m){r.push(new Date(d));d.setDate(d.getDate()+1)}return r}
-function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-function pReq(r){return(r||[]).map(function(r){return{id:r['依頼ID'],date:r['日付']||'',source:r['依頼元']||'',siteName:r['現場名']||'',address:r['住所']||'',count:r['必要人数']||0,meetTime:r['集合時間']||'',siteNotes:r['注意事項']||'',status:r['ステータス']||'未配置'}})}
-function pAsgn(r){return(r||[]).map(function(a){var g=[];for(var i=1;i<=10;i++){var n=a['配置者'+i];if(n)g.push(n)}return{date:a['日付']||'',siteName:a['現場名']||'',required:a['必要人数']||0,guards:g,extC:a['外部委託先']||'',extN:a['外部委託人数']||0}})}
-function pOff(r){return(r||[]).map(function(d){return{gn:d['警備員名']||'',date:d['日付']||'',ed:d['終了日（連休時）']||'',reason:d['理由']||''}})}
+function esc(s){var d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
+
+// Parse guards
+function pGuards(){
+  return(D&&D.guards||[]).map(function(g,i){
+    return{id:g['ID']||i+1,name:g['氏名']||'',qual:g['保有資格']||'',type:g['雇用形態']||'常勤',phone:g['電話番号']||'',lwId:g['LINE WORKS ID']||''}
+  })
+}
+function pReq(arr){return(arr||[]).map(function(r){return{id:r['依頼ID'],date:r['日付']||'',source:r['依頼元']||'',siteName:r['現場名']||'',address:r['住所']||'',count:parseInt(r['必要人数'])||0,meetTime:r['集合時間']||'',siteNotes:r['注意事項']||'',status:r['ステータス']||'未配置'}})}
+function pAsgn(arr){return(arr||[]).map(function(a){var g=[];for(var i=1;i<=10;i++){var n=a['配置者'+i];if(n)g.push(n)}return{date:a['日付']||'',siteName:a['現場名']||'',guards:g,extC:a['外部委託先']||'',extN:parseInt(a['外部人数'])||parseInt(a['外部委託人数'])||0}})}
+function pOff(arr){return(arr||[]).map(function(d){return{gn:d['警備員名']||'',date:d['日付']||'',ed:d['終了日（連休時）']||'',reason:d['理由']||''}})}
+function pAtt(arr){return arr||[]}
+
 function rfd(ds){return pReq(D?D.requests:null).filter(function(r){return r.date===ds})}
 function afd(ds){return pAsgn(D?D.assignments:null).filter(function(a){return a.date===ds})}
 function ofd(ds){return pOff(D?D.dayoffs:null).filter(function(d){return d.date===ds||(d.ed&&d.date<=ds&&d.ed>=ds)})}
+function attfd(ds){return pAtt(D?D.attendance:null).filter(function(a){return a['日付']===ds})}
 function tn(ds){return rfd(ds).reduce(function(s,r){return s+r.count},0)}
 function ac(ds){return afd(ds).reduce(function(s,x){return s+x.guards.length+x.extN},0)}
 function sh(ds){return Math.max(0,tn(ds)-ac(ds))}
+
 function gmu(a){return'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(a)}
 function gm(n,r,ds){var l=[n+'さん','','明日の配置のご連絡です。','','【日付】'+ds,'【現場名】'+r.siteName];if(r.address){l.push('【住所】'+r.address,'【地図】'+gmu(r.address))}if(r.meetTime)l.push('【集合時間】'+r.meetTime);if(r.siteNotes)l.push('【注意事項】'+r.siteNotes);l.push('','安全第一でよろしくお願いします。','越前警備株式会社');return l.join('\n')}
 function st(m,t){S.to={m:m,t:t||'success'};R();setTimeout(function(){S.to=null;R()},2500)}
 async function cp(t,id){try{await navigator.clipboard.writeText(t);S.ci=id;st('コピーしました！');setTimeout(function(){S.ci=null;R()},2000)}catch(e){st('コピー失敗','warning')}}
 async function FD(){S.ld=true;S.er=null;R();try{var r=await fetch(GAS_URL+'?action=all');var j=await r.json();if(j.status==='ok'){D=j.data;S.lf=new Date()}else{S.er=j.message||'エラー'}}catch(e){S.er='接続エラー: '+e.message}S.ld=false;R()}
-function R(){var a=document.getElementById('app');var th='';if(S.to)th='<div class="toast" style="background:'+(S.to.t==='warning'?'var(--warn)':'var(--success)')+'">'+esc(S.to.m)+'</div>';
-var eh='';if(S.er)eh='<div class="info-box" style="background:var(--danger-light);color:var(--danger);margin-bottom:12px">⚠ '+esc(S.er)+'</div>';
-var tabs=[{id:'calendar',l:'📅 カレンダー'},{id:'requests',l:'📋 依頼一覧'},{id:'message',l:'💬 LINE送信'}];
+
+function R(){
+var a=document.getElementById('app');
+var th='';if(S.to)th='<div class="toast" style="background:'+(S.to.t==='warning'?'var(--warn)':'var(--success)')+'">'+esc(S.to.m)+'</div>';
+var eh='';if(S.er)eh='<div class="info-box" style="background:var(--danger-light);color:var(--danger)">⚠ '+esc(S.er)+'</div>';
+var tabs=[{id:'calendar',l:'📅 カレンダー'},{id:'attendance',l:'✅ 出勤確認'},{id:'requests',l:'📋 依頼'},{id:'message',l:'💬 LINE送信'}];
 var tbh=tabs.map(function(t){return'<button class="tab '+(S.tab===t.id?'active':'')+'" onclick="S.tab=\''+t.id+'\';R()">'+t.l+'</button>'}).join('');
 var ct='';
-if(S.tab==='calendar'&&D){var ds=gmd(S.vy,S.vm),pad=ds[0].getDay(),cls='';
+
+// ===== CALENDAR =====
+if(S.tab==='calendar'&&D){
+var ds=gmd(S.vy,S.vm),pad=ds[0].getDay();
 var cl='';for(var i=0;i<pad;i++)cl+='<div></div>';
 ds.forEach(function(d){var s=fd(d),nd=tn(s),sg=sh(s),ag=ac(s),oc=ofd(s).length,it=TD===s,is=S.sd===s,iw=d.getDay()===0||d.getDay()===6;
 var c='cal-cell'+(iw?' weekend':'')+(is?' selected':'');
@@ -83,42 +100,89 @@ var dc=d.getDay()===0?'var(--danger)':d.getDay()===6?'var(--accent)':'var(--text
 var inf='';if(oc>0)inf+='<div style="font-size:10px;color:#9333ea;font-weight:600">休'+oc+'</div>';
 if(nd>0){inf+='<div style="font-size:10px;color:var(--text2);margin-top:'+(oc?0:3)+'px">要'+nd+' 済'+ag+'</div>';
 inf+=sg>0?'<div style="font-size:10px;font-weight:700;color:var(--danger)">不足'+sg+'</div>':'<div style="font-size:10px;font-weight:600;color:var(--success)">OK</div>'}
-cl+='<div class="'+c+'" onclick="S.sd=S.sd===\''+s+'\'?null:\''+s+'\';R()"><div class="date" style="color:'+dc+'">'+dl+'</div>'+inf+'</div>'});
-var det='';if(S.sd){var sd=S.sd,of=ofd(sd),rq=rfd(sd),as=afd(sd);
+cl+='<div class="'+c+'" onclick="S.sd=S.sd===\''+s+'\'?null:\''+s+'\';R()"><div style="font-size:13px;font-weight:'+(it?700:500)+';color:'+dc+'">'+dl+'</div>'+inf+'</div>'});
+
+var det='';
+if(S.sd){var sd=S.sd,of=ofd(sd),rq=rfd(sd),as=afd(sd),att=attfd(sd);
 var oh='';if(of.length>0){var tg=of.map(function(o){return'<span class="tag" style="background:#ede9fe;color:#6d28d9">'+esc(o.gn)+(o.reason?' ('+esc(o.reason)+')':'')+'</span>'}).join(' ');
 oh='<div style="margin-bottom:10px;padding:8px 12px;border-radius:10px;background:#f3e8ff;border:1px solid #d8b4fe"><div style="font-size:12px;font-weight:600;color:#7c3aed;margin-bottom:4px">休暇 ('+of.length+'名)</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+tg+'</div></div>'}
+
 var rh='';if(rq.length===0)rh='<p style="color:var(--text2);font-size:13px">依頼なし</p>';
 rq.forEach(function(r){var bg=r.source==='グループ'?'#ecfdf5':'#fef3c7',bd=r.source==='グループ'?'#a7f3d0':'#fde68a',sb=r.source==='グループ'?'#059669':'#d97706';
 var stb=r.status==='配置済'?'var(--success-light)':r.status==='未配置'?'var(--danger-light)':'var(--warn-light)',stc=r.status==='配置済'?'var(--success)':r.status==='未配置'?'var(--danger)':'var(--warn)';
-var ai='';if(r.address)ai='<div style="margin-top:4px;font-size:11px;color:var(--text2)">📍 '+esc(r.address)+(r.meetTime?' | 集合: '+esc(r.meetTime):'')+(r.siteNotes?' | 注意: '+esc(r.siteNotes):'')+'</div>';
+var ai='';if(r.address)ai='<div style="margin-top:4px;font-size:11px;color:var(--text2)">📍 '+esc(r.address)+(r.meetTime?' | 集合: '+esc(r.meetTime):'')+'</div>';
 rh+='<div class="req-row" style="background:'+bg+';border:1px solid '+bd+'"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span class="badge" style="background:'+sb+';color:#fff">'+esc(r.source)+'</span><span style="font-size:13px;font-weight:600">'+esc(r.siteName)+'</span><span style="font-size:12px;color:var(--text2)">'+r.count+'名</span><span class="badge" style="background:'+stb+';color:'+stc+'">'+esc(r.status)+'</span></div>'+ai+'</div>'});
+
 var ah='';if(as.length>0){var tgs='';as.forEach(function(a){a.guards.forEach(function(g){tgs+='<span class="tag" style="background:var(--accent-light);color:var(--accent)">'+esc(g)+'</span> '});if(a.extC)tgs+='<span class="tag" style="background:var(--warn-light);color:var(--warn)">'+esc(a.extC)+'('+a.extN+'名)</span> '});
 ah='<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">配置済み</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+tgs+'</div></div>'}
-det='<div class="card"><h3 style="font-size:15px;font-weight:700;margin-bottom:12px">'+sd+'</h3>'+oh+rh+ah+'</div>'}
-ct='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><button class="btn btn-outline" onclick="if(S.vm===0){S.vm=11;S.vy--}else S.vm--;R()">◀</button><h2 style="font-size:18px;font-weight:700">'+S.vy+'年'+(S.vm+1)+'月</h2><button class="btn btn-outline" onclick="if(S.vm===11){S.vm=0;S.vy++}else S.vm++;R()">▶</button></div><div class="cal-grid" style="margin-bottom:2px">'+DN.map(function(d,i){return'<div class="cal-header" style="color:'+(i===0?'var(--danger)':i===6?'var(--accent)':'var(--text2)')+'">'+d+'</div>'}).join('')+'</div><div class="cal-grid">'+cl+'</div>'+det}
-if(S.tab==='requests'&&D){var rqs=pReq(D.requests).sort(function(a,b){return a.date.localeCompare(b.date)});var rw='';
+
+// Attendance summary for this date
+var ath='';if(att.length>0){
+var guards=pGuards();var irreg=guards.filter(function(g){return g.type==='パート'||g.type==='登録型'});
+var regCount=guards.filter(function(g){return g.type==='常勤'}).length;
+ath='<div style="margin-top:10px;padding:8px 12px;border-radius:10px;background:var(--cyan-light);border:1px solid #67e8f9"><div style="font-size:12px;font-weight:600;color:var(--cyan);margin-bottom:4px">出勤確認状況（常勤'+regCount+'名は確認不要）</div>';
+att.forEach(function(row){
+var tags='';irreg.forEach(function(g){var v=row[g.name]||'';if(v==='○')tags+='<span class="tag" style="background:var(--success-light);color:var(--success)">'+esc(g.name)+' ○</span> ';else if(v==='×')tags+='<span class="tag" style="background:var(--danger-light);color:var(--danger)">'+esc(g.name)+' ×</span> ';else tags+='<span class="tag" style="background:var(--bg3);color:var(--text2)">'+esc(g.name)+' 未</span> '});
+ath+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">'+tags+'</div>'});
+ath+='</div>'}
+
+det='<div class="card"><h3 style="font-size:15px;font-weight:700;margin-bottom:12px">'+sd+'</h3>'+oh+rh+ah+ath+'</div>'}
+
+ct='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><button class="btn-outline" onclick="if(S.vm===0){S.vm=11;S.vy--}else S.vm--;R()">◀</button><h2 style="font-size:18px;font-weight:700">'+S.vy+'年'+(S.vm+1)+'月</h2><button class="btn-outline" onclick="if(S.vm===11){S.vm=0;S.vy++}else S.vm++;R()">▶</button></div><div class="cal-grid" style="margin-bottom:2px">'+DN.map(function(d,i){return'<div class="cal-header" style="color:'+(i===0?'var(--danger)':i===6?'var(--accent)':'var(--text2)')+'">'+d+'</div>'}).join('')+'</div><div class="cal-grid">'+cl+'</div>'+det}
+
+// ===== ATTENDANCE =====
+if(S.tab==='attendance'&&D){
+var guards=pGuards();var reg=guards.filter(function(g){return g.type==='常勤'});var irr=guards.filter(function(g){return g.type==='パート'||g.type==='登録型'});
+var regHtml='<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:600;color:var(--success);margin-bottom:6px">常勤（'+reg.length+'名）— 確認不要</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+reg.map(function(g){return'<span class="tag" style="background:var(--success-light);color:var(--success)">'+esc(g.name)+'</span>'}).join('')+'</div></div>';
+var irrHtml='<div style="margin-bottom:16px"><div style="font-size:13px;font-weight:600;color:var(--cyan);margin-bottom:6px">パート・登録型（'+irr.length+'名）— LINE WORKSまたは電話で確認</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+irr.map(function(g){var c=g.type==='パート'?'var(--warn)':'var(--danger)';return'<span class="tag" style="background:var(--bg3);color:'+c+'">'+esc(g.name)+'（'+esc(g.type)+'）</span>'}).join('')+'</div></div>';
+
+// Attendance table from sheet data
+var attData=pAtt(D.attendance);var tblHtml='';
+if(attData.length>0&&irr.length>0){
+tblHtml='<table class="att-tbl"><thead><tr><th>日付</th><th>現場名</th><th>必要</th>';
+irr.forEach(function(g){tblHtml+='<th>'+esc(g.name.substring(0,2))+'</th>'});
+tblHtml+='<th>状況</th></tr></thead><tbody>';
+attData.forEach(function(row){
+if(!row['日付'])return;
+tblHtml+='<tr><td>'+esc(row['日付'])+'</td><td>'+esc(row['現場名']||'')+'</td><td>'+esc(row['必要人数']||'')+'</td>';
+irr.forEach(function(g){var v=row[g.name]||'';var cls=v==='○'?'ok':v==='×'?'ng':'pending';tblHtml+='<td class="'+cls+'">'+(v||'-')+'</td>'});
+tblHtml+='<td>'+esc(row['状況']||'')+'</td></tr>'});
+tblHtml+='</tbody></table>'}else{tblHtml='<p style="color:var(--text2);text-align:center;padding:20px">出勤確認データなし（スプレッドシートの「出勤確認」シートに入力してください）</p>'}
+
+ct='<h2 style="font-size:18px;font-weight:700;margin-bottom:12px">出勤確認</h2>'+regHtml+irrHtml+tblHtml}
+
+// ===== REQUESTS =====
+if(S.tab==='requests'&&D){
+var rqs=pReq(D.requests).sort(function(a,b){return a.date.localeCompare(b.date)});var rw='';
 if(rqs.length===0)rw='<p style="color:var(--text2);text-align:center;padding:40px">依頼なし</p>';
 rqs.forEach(function(r){var sb=r.source==='グループ'?'#059669':'#d97706',stb=r.status==='配置済'?'var(--success-light)':'var(--danger-light)',stc=r.status==='配置済'?'var(--success)':'var(--danger)';
 rw+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin-bottom:6px;border-radius:12px;background:var(--bg2);border:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="badge" style="background:'+sb+';color:#fff">'+esc(r.source)+'</span><span style="font-size:13px;font-weight:600">'+esc(r.siteName)+'</span><span style="font-size:12px;color:var(--text2)">'+esc(r.date)+'</span><span style="font-size:12px;color:var(--text2)">'+r.count+'名</span></div><span class="badge" style="background:'+stb+';color:'+stc+'">'+esc(r.status)+'</span></div>'});
 ct='<h2 style="font-size:18px;font-weight:700;margin-bottom:12px">依頼一覧（'+rqs.length+'件）</h2>'+rw}
-if(S.tab==='message'&&D){var sd=S.sd||'',mc='';
+
+// ===== LINE WORKS =====
+if(S.tab==='message'&&D){
+var sd=S.sd||'',mc='';
 if(sd){var rqs=rfd(sd),ass=afd(sd),ag=ass.reduce(function(a,x){return a.concat(x.guards)},[]);
 if(rqs.length===0)mc='<p style="color:var(--text2);padding:20px;text-align:center">この日の依頼はありません</p>';
 else if(ag.length===0)mc='<p style="color:var(--text2);padding:20px;text-align:center">配置がまだありません<br><span style="font-size:12px">スプレッドシートの配置表に入力してください</span></p>';
 else{var rq=rqs[0],wh='';
-if(!rq.address)wh='<div class="info-box" style="background:var(--warn-light);color:#92400e;margin-bottom:12px">⚠ 住所が未登録です。スプレッドシートに入力後「更新」を押してください。</div>';
+if(!rq.address)wh='<div class="info-box" style="background:var(--warn-light);color:#92400e">⚠ 住所未登録。スプレッドシートに入力後「更新」を押してください。</div>';
 var si='<div style="padding:12px 16px;border-radius:12px;background:#f0fdf4;border:1px solid #bbf7d0;margin-bottom:12px"><div style="font-size:13px;font-weight:600;color:#16a34a;margin-bottom:6px">現場情報</div><div style="font-size:13px;line-height:1.8"><div>現場: '+esc(rq.siteName)+'</div>'+(rq.address?'<div>住所: '+esc(rq.address)+'</div>':'')+(rq.meetTime?'<div>集合: '+esc(rq.meetTime)+'</div>':'')+(rq.siteNotes?'<div>注意: '+esc(rq.siteNotes)+'</div>':'')+'</div></div>';
 var cds='';ag.forEach(function(g,i){var msg=gm(g,rq,sd),ic=S.ci==='msg-'+i;
 cds+='<div class="msg-box"><div class="msg-header"><span style="font-size:13px;font-weight:600">'+esc(g)+'</span><button class="btn-copy '+(ic?'copied':'')+'" onclick="cpm('+i+',\''+sd+'\')">'+(ic?'✓ コピー済':'📋 コピー')+'</button></div><pre class="msg-body">'+esc(msg)+'</pre></div>'});
 var alc=S.ci==='all-msgs';
 cds+='<button class="all-copy '+(alc?'copied':'')+'" onclick="cpa(\''+sd+'\')">'+(alc?'✓ 全員分コピー済':'📋 全員分を一括コピー')+'</button>';
 mc=wh+si+cds}}
-ct='<h2 style="font-size:18px;font-weight:700;margin-bottom:4px">LINE WORKS 送信メッセージ</h2><p style="font-size:12px;color:var(--text2);margin-bottom:16px">日付を選択してメッセージを生成</p><div style="margin-bottom:16px"><label style="font-size:12px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px">対象日付</label><input type="date" value="'+sd+'" onchange="S.sd=this.value;R()" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px"></div>'+mc}
+ct='<h2 style="font-size:18px;font-weight:700;margin-bottom:4px">LINE WORKS 送信メッセージ</h2><p style="font-size:12px;color:var(--text2);margin-bottom:16px">日付を選択してメッセージを生成</p><div style="margin-bottom:16px"><input type="date" value="'+sd+'" onchange="S.sd=this.value;R()"></div>'+mc}
+
 if(S.ld&&!D)ct='<div style="text-align:center;padding:40px;color:var(--text2)">データ読み込み中...</div>';
 var ls=S.lf?' | 最終: '+S.lf.toLocaleTimeString('ja-JP'):'';
-a.innerHTML=th+'<div class="container"><div class="header"><div><h1>警備員配置管理</h1><p>越前警備'+ls+'</p></div><div style="display:flex;gap:6px"><button class="btn btn-outline" onclick="FD()">🔄 '+(S.ld?'取得中...':'更新')+'</button></div></div>'+eh+'<div class="tabs">'+tbh+'</div>'+ct+'</div>'}
+a.innerHTML=th+'<div class="container"><div class="header"><div><h1>警備員配置管理</h1><p>越前警備'+ls+'</p></div><div style="display:flex;gap:6px"><button class="btn-outline" onclick="FD()">🔄 '+(S.ld?'取得中...':'更新')+'</button></div></div>'+eh+'<div class="tabs">'+tbh+'</div>'+ct+'</div>'
+}
+
 function cpm(i,sd){var rq=rfd(sd),ag=afd(sd).reduce(function(a,x){return a.concat(x.guards)},[]);if(rq[0]&&ag[i])cp(gm(ag[i],rq[0],sd),'msg-'+i)}
 function cpa(sd){var rq=rfd(sd),ag=afd(sd).reduce(function(a,x){return a.concat(x.guards)},[]);if(rq[0]&&ag.length)cp(ag.map(function(g){return gm(g,rq[0],sd)}).join('\n\n---\n\n'),'all-msgs')}
+
 R();FD();
 </script>
 </body>

@@ -954,8 +954,8 @@ const ACTIONS = {
   'last-number':      { icon:'🔢', label:(num)=>`「ラストナンバー ${num} です」`, say:(num)=>`ラストナンバー${num}です` },
   'empty':            { icon:'🅿️', label:'「空車です」', say:'A班、ただいま空車です' },
   'dozo':             { icon:'✅', label:'「どうぞ」', say:'どうぞ' },
-  'confirm-last':     { icon:'👀', label:(num)=>`「${num} 了解、通過後流します」`, say:(num)=>`${num}了解、通過後流します` },
-  'continue':         { icon:'🔄', label:'「了解、引き続き流します」', say:'了解、ではこちらから引き続き流します' },
+  'confirm-last':     { icon:'👀', label:(num)=>`「${num} 了解、確認後流します」`, say:(num)=>`${num}了解、確認後流します` },
+  'continue':         { icon:'🔄', label:'「引き続き流します」', say:'引き続き流します' },
   'emergency':        { icon:'🚨', label:'「緊急車両通過！両側停止！」', say:'緊急車両通過、両側停止' }
 };
 
@@ -1074,11 +1074,13 @@ function processVoiceCommand(text){
     }
   } else if(/どうぞ|どぞ/.test(t)){
     executeAction('dozo');
+  } else if(/引き続き|ひきつづき/.test(t)){
+    executeAction('continue');
   } else if(/接近|せっきん|ながします|流します/.test(t)){
     executeAction('approach-release');
   } else if(/空車|くうしゃ|ありません|なし/.test(t)){
     executeAction('empty');
-  } else if(/了解|りょうかい|引き続き|ひきつづき/.test(t)){
+  } else if(/了解|りょうかい|確認/.test(t)){
     if(state.waitingForPartnerLast) executeAction('confirm-last', state.waitingForPartnerLast);
     else executeAction('continue');
   } else if(num && state.waitingForPartnerLast){
@@ -1140,13 +1142,13 @@ function executeAction(actionType, param){
       speak(`ラストナンバー ${num} です`);
       state.myAnnouncedLast = num;
       setTimeout(()=>{
-        log('B班', `${num} 了解、通過後流します`, 'partner');
-        speak(`${num} 了解、通過後流します`);
+        log('B班', `${num} 了解、確認後流します`, 'partner');
+        speak(`${num} 了解、確認後流します`);
         state.score += 15;
         updateHUD();
-        showHint(`B班がラストナンバー確認。<br>こちらは停止合図維持、B班の流動を待ちましょう`, 5000);
-        // 数秒後にB班が流動サイクル開始
-        setTimeout(()=>{ if(state.running) startPartnerCycle(); }, 3500);
+        showHint(`B班がラストナンバー確認中。<br>こちらは停止合図維持、B班の流動開始を待ちましょう`, 5000);
+        // 数秒後にB班が流動サイクル開始（または空車パターン）
+        setTimeout(()=>{ if(state.running) startPartnerNextCycle(); }, 4500);
       }, 1400);
       setSuggestions([]);
       break;
@@ -1179,20 +1181,30 @@ function executeAction(actionType, param){
         return;
       }
       const lastNum = param || state.waitingForPartnerLast;
-      log('A班(自分)', `${lastNum} 了解、通過後流します`, 'me');
-      speak(`${lastNum} 了解、通過後流します`);
+      log('A班(自分)', `${lastNum} 了解、確認後流します`, 'me');
+      speak(`${lastNum} 了解、確認後流します`);
       state.score += 15;
       updateHUD();
-      showHint(`ナンバー <strong>${lastNum}</strong> の対向車を視認してから流動開始！`, 5500);
+      showHint(`ナンバー <strong>${lastNum}</strong> の対向車を視認後、こちらから流動開始！`, 5500);
       setSuggestions([]);
       break;
 
     case 'continue':
-      log('A班(自分)', '了解、ではこちらから引き続き流します', 'me');
-      speak('了解、ではこちらから引き続き流します');
-      state.score += 8;
+      log('A班(自分)', '引き続き流します', 'me');
+      speak('引き続き流します');
+      state.score += 10;
       updateHUD();
+      showHint('✓ 流動継続。<br>そのまま <strong>進行ボタン</strong>で車を流してください', 5000);
       setSuggestions([]);
+      // 数秒後、自動的にB班が次サイクル準備（5〜8秒）
+      setTimeout(()=>{
+        if(state.running && !state.waitingForPartnerLast){
+          // 自分の流動を継続しているはず → 一定時間後にB班から「車両接近」連絡
+          // ただし「引き続き流します」と返事した直後は、自分の流動が継続中なので
+          // しばらくしてからB班サイクルに移る
+          // → 何もせず次のラスト宣言待ちにする
+        }
+      }, 5000);
       break;
 
     case 'emergency':
@@ -1284,7 +1296,7 @@ function spawnVehicle(opts={}){
 
   // 座標系：t=1.0(カメラ目前、最大) → t=0.45(画面奥、消失) で対向車は走り去る
   // ラスト車は t=0.98（警備員のほぼ目前）に出現
-  // 宣言後2〜3秒で警備員前を通過 → さらに数秒で奥へ消える、というリアルな動き
+  // 宣言（出現5.5秒後）→ 2〜4秒で警備員前を通過するリアルな速さ
   let startT;
   if(direction === 'departing'){
     if(forceLast){
@@ -1296,11 +1308,14 @@ function spawnVehicle(opts={}){
     startT = 0;
   }
   const baseSpeed = 0.00035 + Math.random()*0.00008;
-  // ラスト車：宣言してから2〜3秒で目前通過、その後さらに通過完了
-  // t=0.98→0.45 距離0.53 を約8秒で通過 = 0.0000663/ms
-  // → 宣言5.5秒後の時点でまだ目の前、その後ぐっと近づいて通過、消える
+  // ラスト車の動き設計：
+  // - 出現後 5.5秒間はゲームループ側でほぼ静止保持（宣言待ち）
+  // - 宣言後 2〜4秒で目前通過 → さらに数秒で奥へ消える
+  // ★ ただし普通の対向車スピードでt=0.98から進ませると、5.5秒前に消えてしまう
+  // → 別アプローチ：ラスト車は出現直後ゆっくり、宣言後に加速する仕組みに
+  // 初期速度は超低速、宣言時に通常速度に変える（announcePartnerLastNumberFor内で）
   const finalSpeed = isEmergency ? baseSpeed * 1.4
-                   : forceLast ? 0.0000663   // 約8秒で画面通過（自然な速さ）
+                   : forceLast ? 0.000003   // 出現直後は超低速で待機状態
                    : baseSpeed;
 
   const obj = {
@@ -1536,6 +1551,28 @@ function startPartnerCycle(){
   setSuggestions([{action:'dozo', urgent:true}]);
 }
 
+// ★ A班ラストナンバー宣言後、B班が次のサイクルに入る分岐
+// 70%確率で通常サイクル、30%確率で「空車」パターン
+function startPartnerNextCycle(){
+  const isEmpty = Math.random() < 0.3; // 30%で空車
+  if(isEmpty){
+    startPartnerEmptyCycle();
+  } else {
+    startPartnerCycle();
+  }
+}
+
+// 空車パターン：B班から「ただいま空車です」→ A班が「引き続き流します」で流動継続
+function startPartnerEmptyCycle(){
+  log('B班', 'B班、ただいま空車です', 'partner');
+  speak('B班、ただいま空車です');
+  state.partnerLane = 'stopped'; // 対向車が来ないので空車扱い
+  state.waitingForPartnerLast = null;
+  updateHUD();
+  showHint(`📻 B班から「空車」連絡！<br>こちらは <strong>「引き続き流します」</strong>で継続流動`, 6000);
+  setSuggestions([{action:'continue', urgent:true}]);
+}
+
 function announcePartnerLastNumber(){
   // ラスト車両を確実に生成（指定ナンバーで）
   const lastCar = spawnVehicle({direction:'departing', forceLast:true});
@@ -1550,8 +1587,17 @@ function announcePartnerLastNumberFor(lastTwo){
   state.waitingForPartnerLast = lastTwo;
   log('B班', `B班、ラストナンバー ${lastTwo} です`, 'partner');
   speak(`B班、ラストナンバー ${lastTwo} です`);
-  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>画面の対向車をよく見て、ナンバー ${lastTwo} の車を視認してから「了解」`, 9000);
+  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>画面の対向車をよく見て、ナンバー ${lastTwo} の車を視認後に「確認後流します」`, 9000);
   setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true}]);
+
+  // ★ 画面上のforceLast車（待機中）を加速して、宣言から2〜4秒で通過させる
+  const lastCar = state.vehicles.find(v => v.direction === 'departing' && v.forceLast && v.lastTwo === lastTwo);
+  if(lastCar){
+    // t=0.98→ PASS_T(1.05) までの距離 0.07 を 約3秒で通過 → その後さらに消失
+    // でも departing車は t減少 で進む。 t=0.98→0.45 距離0.53を 約3秒で通過したい
+    // → 速度 0.53 / 3000 = 0.000177/ms（通常の約50%）
+    lastCar.speed = 0.000177;
+  }
 }
 
 function announceFakeLastNumber(){

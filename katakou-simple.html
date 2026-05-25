@@ -897,6 +897,7 @@ const state = {
   partnerCycleStartedAt: 0,     // B班サイクル開始時刻
   partnerCarsSpawnedThisCycle: 0, // このサイクルで流したB班車両数
   partnerLastAnnounced: false,    // このサイクルでラスト宣言済か
+  partnerCycleTargetCount: 3,     // このサイクルで流す台数（毎回決定）
   // ▼ A班サイクル管理（自分が流している時）
   myCarsPassedThisCycle: 0,
   myFlowStartedAt: 0
@@ -1277,17 +1278,15 @@ function spawnVehicle(opts={}){
     attempts++;
   } while(direction==='departing' && existingDepartLastTwos.includes(lastTwo) && attempts < 30);
 
-  // forceLast：このラスト車両は「画面奥」から登場してゆっくり通過していく
+  // forceLast：このラスト車両は「画面の奥」から登場
+  // 宣言の前に出現させて、宣言時にはまだ遠方(200m手前)にいる状態にする
+  // → 警備員は宣言を聞いてから車を意識して見る時間が10秒以上ある
   let startT;
   if(direction === 'departing'){
     if(forceLast){
-      // 既存対向車の中で最も奥（最小t値）よりさらに奥に出現させる
-      const existingDeparting = state.vehicles.filter(v=>v.direction==='departing');
-      const farthestT = existingDeparting.length > 0
-        ? Math.min(...existingDeparting.map(v=>v.t))
-        : 0.95;
-      // 既存より少し奥（小さいt）から登場、ただし最低0.85は保つ
-      startT = Math.max(0.85, farthestT - 0.05);
+      // ラスト車は画面の奥(t=0.7前後)から出現
+      // ここから DEPART_END_T(0.45)までゆっくり進む = 約10〜15秒の余裕
+      startT = 0.72;
     } else {
       startT = 0.95;
     }
@@ -1295,10 +1294,14 @@ function spawnVehicle(opts={}){
     startT = 0;
   }
   const baseSpeed = 0.00035 + Math.random()*0.00008;
+  // ラスト車はゆっくり通過させて視認時間を確保
+  const finalSpeed = isEmergency ? baseSpeed * 1.4
+                   : forceLast ? baseSpeed * 0.7
+                   : baseSpeed;
 
   const obj = {
     el:v, t:startT, direction:direction,
-    speed: isEmergency ? baseSpeed*1.4 : baseSpeed,
+    speed: finalSpeed,
     stopped:false,
     color: isEmergency ? '#fff' : CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)],
     emergency: isEmergency,
@@ -1516,7 +1519,8 @@ function startPartnerCycle(){
   state.departSpawnTimer = Date.now() - 1500;
   state.partnerCycleStartedAt = Date.now();
   state.partnerCarsSpawnedThisCycle = 0;
-  state.partnerLastAnnounced = false; // 重要：新サイクルではラスト宣言フラグをリセット
+  state.partnerLastAnnounced = false;
+  state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
   state.waitingForPartnerLast = null;
   updateHUD();
   showHint('📻 B班から接近通報。<br>「どうぞ」と応答してください', 5000);
@@ -1527,15 +1531,18 @@ function announcePartnerLastNumber(){
   // ラスト車両を確実に生成（指定ナンバーで）
   const lastCar = spawnVehicle({direction:'departing', forceLast:true});
   const lastTwo = lastCar.lastTwo;
+  announcePartnerLastNumberFor(lastTwo);
+  // 新規対向車のスポーン停止（このラスト車両で終わり）
+  state.departSpawnTimer = Date.now() + 9999999;
+}
 
+// ラスト車が既に画面に出ている状態で音声宣言だけ行う（視認時間確保用）
+function announcePartnerLastNumberFor(lastTwo){
   state.waitingForPartnerLast = lastTwo;
   log('B班', `B班、ラストナンバー ${lastTwo} です`, 'partner');
   speak(`B班、ラストナンバー ${lastTwo} です`);
-  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>そのナンバーの対向車を視認してから「了解」`, 8000);
+  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>画面の対向車をよく見て、ナンバー ${lastTwo} の車を視認してから「了解」`, 9000);
   setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true}]);
-
-  // 新規対向車のスポーン停止（このラスト車両で終わり）
-  state.departSpawnTimer = Date.now() + 9999999;
 }
 
 function announceFakeLastNumber(){
@@ -1586,8 +1593,9 @@ const scenarios = {
       state.partnerCycleStartedAt = Date.now();
       state.partnerCarsSpawnedThisCycle = 0;
       state.partnerLastAnnounced = false;
+      state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
       setSuggestions([]);
-      // ラスト宣言はゲームループ内で「対向車を2〜3台流したあと」自動的に行われる
+      // ラスト宣言はゲームループ内で「対向車を最後の1台を出してから5〜6秒後」自動的に行われる
     },
     tick(){
       const ac = state.vehicles.filter(v=>v.direction==='approaching').length;
@@ -1684,20 +1692,26 @@ function gameLoop(ts){
   // ▼ B班の対向車スポーン処理（カウンタ付き）
   if(state.partnerLane === 'flowing' && !state.emergencyTriggered && !state.partnerLastAnnounced){
     if(Date.now() - state.departSpawnTimer > 7000 + Math.random()*3000){
-      spawnVehicle({direction:'departing'});
+      const targetCount = state.partnerCycleTargetCount || 3; // 1サイクルあたりの台数（最初に決定）
+      const isLastCar = state.partnerCarsSpawnedThisCycle === targetCount - 1;
+
+      // ★ ラスト車を画面奥にひそかに出現させる（音声宣言はまだしない）
+      const newCar = spawnVehicle({direction:'departing', forceLast: isLastCar});
       state.partnerCarsSpawnedThisCycle++;
       state.departSpawnTimer = Date.now();
 
-      // ★ 2〜3台流したら、次の車をラスト車として宣言
-      const targetCount = 2 + Math.floor(Math.random()*2); // 2 or 3
-      if(state.partnerCarsSpawnedThisCycle >= targetCount){
+      if(isLastCar){
+        // ラスト車が画面奥に出た → 数秒後に音声宣言
+        // この5〜6秒が「警備員が宣言を聞いてから車を意識して見る」時間
         state.partnerLastAnnounced = true;
-        // 少し間を空けてからラスト宣言（リアルさのため）
+        const announcedNum = newCar.lastTwo;
         setTimeout(()=>{
           if(state.running && state.partnerLane === 'flowing' && !state.waitingForPartnerLast){
-            announcePartnerLastNumber();
+            announcePartnerLastNumberFor(announcedNum);
           }
-        }, 3000 + Math.random()*2000);
+        }, 5500);
+        // 新規対向車のスポーン停止
+        state.departSpawnTimer = Date.now() + 9999999;
       }
     }
   }

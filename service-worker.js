@@ -5,7 +5,7 @@
 
 // バージョンは更新時に手動でインクリメント
 // （新しい番号にすると、全ユーザーの端末で自動的に最新版に切り替わる）
-const CACHE_VERSION = 'v1.0.1';
+const CACHE_VERSION = 'v1.0.2';
 const CACHE_NAME = 'katakou-sim-' + CACHE_VERSION;
 
 // キャッシュするファイル一覧

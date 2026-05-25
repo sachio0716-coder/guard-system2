@@ -887,12 +887,19 @@ const state = {
   waitingForPartnerLast: null,
   myAnnouncedLast: null,
   // Conversation flow
-  expectedNextAction: null, // 期待される次のアクション（サジェスト用）
+  expectedNextAction: null,
   pttActive: false,
   recognition: null,
   voiceSupported: false,
   ttsVoice: null,
-  fakeLastNum: null
+  fakeLastNum: null,
+  // ▼ B班サイクル管理
+  partnerCycleStartedAt: 0,     // B班サイクル開始時刻
+  partnerCarsSpawnedThisCycle: 0, // このサイクルで流したB班車両数
+  partnerLastAnnounced: false,    // このサイクルでラスト宣言済か
+  // ▼ A班サイクル管理（自分が流している時）
+  myCarsPassedThisCycle: 0,
+  myFlowStartedAt: 0
 };
 
 /* =========================================================================
@@ -1217,6 +1224,25 @@ function setBaton(signal){
   if(signal === 'go' && state.waitingForPartnerLast){
     triggerIncident('B班ラストナンバー未確認のまま進行');
   }
+  // 進行合図開始 → 状態リセット＆サジェスト誘導
+  if(signal === 'go'){
+    state.myFlowStartedAt = Date.now();
+    state.myCarsPassedThisCycle = 0;
+    setTimeout(()=>{
+      if(state.batonSignal === 'go' && state.lastPassedCar){
+        showHint('🚗 1台通過。<br>もう2〜3台流したら<strong>停止ボタン → ラストナンバー宣言</strong>へ', 5000);
+      }
+    }, 8000);
+  }
+  // 停止合図 → ラスト宣言をサジェスト
+  if(signal === 'stop' && state.lastPassedCar){
+    setTimeout(()=>{
+      if(state.batonSignal === 'stop' && state.lastPassedCar && !state.waitingForPartnerLast){
+        showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> を「ラストナンバー」で宣言してください`, 7000);
+        setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
+      }
+    }, 1500);
+  }
   updateHUD();
 }
 
@@ -1488,14 +1514,13 @@ function startPartnerCycle(){
   speak('B班、車両接近、流します');
   state.partnerLane = 'flowing';
   state.departSpawnTimer = Date.now() - 1500;
+  state.partnerCycleStartedAt = Date.now();
+  state.partnerCarsSpawnedThisCycle = 0;
+  state.partnerLastAnnounced = false; // 重要：新サイクルではラスト宣言フラグをリセット
+  state.waitingForPartnerLast = null;
   updateHUD();
   showHint('📻 B班から接近通報。<br>「どうぞ」と応答してください', 5000);
   setSuggestions([{action:'dozo', urgent:true}]);
-
-  setTimeout(()=>{
-    if(!state.running) return;
-    announcePartnerLastNumber();
-  }, 11000 + Math.random()*3000);
 }
 
 function announcePartnerLastNumber(){
@@ -1506,10 +1531,10 @@ function announcePartnerLastNumber(){
   state.waitingForPartnerLast = lastTwo;
   log('B班', `B班、ラストナンバー ${lastTwo} です`, 'partner');
   speak(`B班、ラストナンバー ${lastTwo} です`);
-  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>その番号の対向車が通過するのを視認してから「了解」`, 7000);
+  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>そのナンバーの対向車を視認してから「了解」`, 8000);
   setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true}]);
 
-  // 新規対向車のスポーンを停止（このラスト車両で終わり）
+  // 新規対向車のスポーン停止（このラスト車両で終わり）
   state.departSpawnTimer = Date.now() + 9999999;
 }
 
@@ -1556,10 +1581,13 @@ function triggerEmergency(){
 const scenarios = {
   basic: {
     init(){
-      showHint('B班が流動中。<br>B班のラストナンバー宣言を待ちましょう', 5500);
+      showHint('B班が流動中。<br>対向車を観察 → B班ラスト宣言を待ちましょう', 5500);
       state.partnerLane = 'flowing';
+      state.partnerCycleStartedAt = Date.now();
+      state.partnerCarsSpawnedThisCycle = 0;
+      state.partnerLastAnnounced = false;
       setSuggestions([]);
-      setTimeout(()=>{ if(state.scenario==='basic' && state.running) announcePartnerLastNumber(); }, 12000);
+      // ラスト宣言はゲームループ内で「対向車を2〜3台流したあと」自動的に行われる
     },
     tick(){
       const ac = state.vehicles.filter(v=>v.direction==='approaching').length;
@@ -1653,10 +1681,24 @@ function gameLoop(ts){
 
   if(scenarios[state.scenario]) scenarios[state.scenario].tick();
 
-  if(state.partnerLane === 'flowing' && !state.emergencyTriggered){
+  // ▼ B班の対向車スポーン処理（カウンタ付き）
+  if(state.partnerLane === 'flowing' && !state.emergencyTriggered && !state.partnerLastAnnounced){
     if(Date.now() - state.departSpawnTimer > 7000 + Math.random()*3000){
       spawnVehicle({direction:'departing'});
+      state.partnerCarsSpawnedThisCycle++;
       state.departSpawnTimer = Date.now();
+
+      // ★ 2〜3台流したら、次の車をラスト車として宣言
+      const targetCount = 2 + Math.floor(Math.random()*2); // 2 or 3
+      if(state.partnerCarsSpawnedThisCycle >= targetCount){
+        state.partnerLastAnnounced = true;
+        // 少し間を空けてからラスト宣言（リアルさのため）
+        setTimeout(()=>{
+          if(state.running && state.partnerLane === 'flowing' && !state.waitingForPartnerLast){
+            announcePartnerLastNumber();
+          }
+        }, 3000 + Math.random()*2000);
+      }
     }
   }
 

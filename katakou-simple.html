@@ -900,7 +900,11 @@ const state = {
   partnerCycleTargetCount: 3,     // このサイクルで流す台数（毎回決定）
   // ▼ A班サイクル管理（自分が流している時）
   myCarsPassedThisCycle: 0,
-  myFlowStartedAt: 0
+  myFlowStartedAt: 0,
+  // ▼ 接近車のバッチ（群れ）管理
+  approachBatchRemaining: 0,        // このバッチでスポーン残数
+  approachBatchInterval: 2000,      // バッチ内のスポーン間隔
+  approachLastSpawnAt: 0,           // 最後にスポーンした時刻
 };
 
 /* =========================================================================
@@ -1279,8 +1283,8 @@ function spawnVehicle(opts={}){
   } while(direction==='departing' && existingDepartLastTwos.includes(lastTwo) && attempts < 30);
 
   // 座標系：t=1.0(カメラ目前、最大) → t=0.45(画面奥、消失) で対向車は走り去る
-  // ラスト車は t=0.98（警備員のほぼ目前）に出現して、超低速で奥へ下がる
-  // → 警備員は宣言を聞いた瞬間、目の前にナンバーを意識して見られる
+  // ラスト車は t=0.98（警備員のほぼ目前）に出現
+  // 宣言後2〜3秒で警備員前を通過 → さらに数秒で奥へ消える、というリアルな動き
   let startT;
   if(direction === 'departing'){
     if(forceLast){
@@ -1292,10 +1296,11 @@ function spawnVehicle(opts={}){
     startT = 0;
   }
   const baseSpeed = 0.00035 + Math.random()*0.00008;
-  // ラスト車：t=0.98→0.45(距離0.53) を 20秒で通過 = 0.0000265/ms
-  // 通常の departing車の約7%スピード（超低速・じっくり見られる）
+  // ラスト車：宣言してから2〜3秒で目前通過、その後さらに通過完了
+  // t=0.98→0.45 距離0.53 を約8秒で通過 = 0.0000663/ms
+  // → 宣言5.5秒後の時点でまだ目の前、その後ぐっと近づいて通過、消える
   const finalSpeed = isEmergency ? baseSpeed * 1.4
-                   : forceLast ? 0.0000265   // 約20秒で画面通過
+                   : forceLast ? 0.0000663   // 約8秒で画面通過（自然な速さ）
                    : baseSpeed;
 
   const obj = {
@@ -1424,6 +1429,11 @@ function updateVehicles(dt){
       }
       obj.el.remove();
       state.vehicles.splice(i,1);
+
+      // 後続車インジケータを更新（残りスポーン予定 + 画面上の残り）
+      const stillApproaching = state.vehicles.filter(v=>v.direction==='approaching').length;
+      const totalRemaining = stillApproaching + state.approachBatchRemaining;
+      updateApproachQueueIndicator(totalRemaining);
     }
   }
 }
@@ -1582,8 +1592,82 @@ function triggerEmergency(){
 }
 
 /* =========================================================================
-   SCENARIOS
+   接近車のバッチ（群れ）スポーン
+   - バッチ間：8〜12秒のインターバル
+   - バッチサイズ：1〜4台（1台=単独車、2台以上=連続車）
+   - バッチ内間隔：1.8秒（連続して接近する様子を表現）
 ========================================================================= */
+function spawnApproachingBatch(){
+  const now = Date.now();
+  const approachingCount = state.vehicles.filter(v=>v.direction==='approaching').length;
+
+  // バッチ残数がある間：1.8秒ごとに連続スポーン
+  if(state.approachBatchRemaining > 0){
+    if(now - state.approachLastSpawnAt > state.approachBatchInterval){
+      spawnVehicle({direction:'approaching'});
+      state.approachBatchRemaining--;
+      state.approachLastSpawnAt = now;
+      // 残りがあれば「後続あり」のHUD表示
+      if(state.approachBatchRemaining > 0){
+        updateApproachQueueIndicator(state.approachBatchRemaining);
+      } else {
+        updateApproachQueueIndicator(0);
+      }
+    }
+    return;
+  }
+
+  // バッチ間のクールダウン中
+  if(approachingCount > 0) return; // 画面に接近車がいる間は新バッチ出さない
+
+  // 新バッチ生成判定（前回スポーンから8〜12秒）
+  if(now - state.spawnTimer < 8000 + Math.random()*4000) return;
+
+  // ★ 新バッチ開始
+  // バッチサイズ：1台=単独（50%）、2台=連続（30%）、3〜4台=渋滞気味（20%）
+  const rand = Math.random();
+  let batchSize;
+  if(rand < 0.5) batchSize = 1;
+  else if(rand < 0.8) batchSize = 2;
+  else batchSize = 3 + Math.floor(Math.random()*2);
+
+  spawnVehicle({direction:'approaching'});
+  state.approachBatchRemaining = batchSize - 1;
+  state.approachBatchInterval = 1600 + Math.random()*600; // 1.6〜2.2秒
+  state.approachLastSpawnAt = now;
+  state.spawnTimer = now;
+
+  // 後続あり表示
+  if(batchSize > 1){
+    updateApproachQueueIndicator(batchSize - 1);
+  }
+}
+
+// 後続車のインジケータ表示（HUD上に「後続◯台」と出す）
+function updateApproachQueueIndicator(remaining){
+  let el = document.getElementById('queue-indicator');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'queue-indicator';
+    el.style.cssText = `
+      position:absolute; top:74px; left:8px; z-index:22;
+      background:rgba(255, 133, 0, 0.95); color:#fff;
+      padding:6px 12px; border-radius:6px;
+      font-size:11px; font-weight:900; letter-spacing:0.05em;
+      border:2px solid #fff;
+      box-shadow:0 2px 8px rgba(0,0,0,0.4);
+      display:none;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  if(remaining > 0){
+    el.innerHTML = `🚗 後続あり：あと <strong>${remaining}</strong>台`;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 const scenarios = {
   basic: {
     init(){
@@ -1597,11 +1681,7 @@ const scenarios = {
       // ラスト宣言はゲームループ内で「対向車を最後の1台を出してから5〜6秒後」自動的に行われる
     },
     tick(){
-      const ac = state.vehicles.filter(v=>v.direction==='approaching').length;
-      if(ac < 3 && Date.now() - state.spawnTimer > 9000){
-        spawnVehicle();
-        state.spawnTimer = Date.now();
-      }
+      spawnApproachingBatch();
     }
   },
   emergency: {
@@ -1612,10 +1692,7 @@ const scenarios = {
       setTimeout(()=>{ if(state.scenario==='emergency' && state.running) triggerEmergency(); }, 8000);
     },
     tick(){
-      if(Date.now() - state.spawnTimer > 9000 && !state.emergencyTriggered){
-        spawnVehicle();
-        state.spawnTimer = Date.now();
-      }
+      if(!state.emergencyTriggered) spawnApproachingBatch();
     }
   },
   pedestrian: {
@@ -1625,10 +1702,7 @@ const scenarios = {
       setTimeout(()=>{ if(state.scenario==='pedestrian' && state.running) spawnPedestrian(); }, 6500);
     },
     tick(){
-      if(Date.now() - state.spawnTimer > 9000){
-        spawnVehicle();
-        state.spawnTimer = Date.now();
-      }
+      spawnApproachingBatch();
     }
   },
   miscom: {
@@ -1639,11 +1713,7 @@ const scenarios = {
       setTimeout(()=>{ if(state.scenario==='miscom' && state.running) announceFakeLastNumber(); }, 8500);
     },
     tick(){
-      const ac = state.vehicles.filter(v=>v.direction==='approaching').length;
-      if(ac < 3 && Date.now() - state.spawnTimer > 9000){
-        spawnVehicle();
-        state.spawnTimer = Date.now();
-      }
+      spawnApproachingBatch();
     }
   }
 };
@@ -1657,11 +1727,15 @@ function startScenario(name){
     emergencyTriggered:false, emergencyAcknowledged:false,
     lastPassedCar:null, lastDepartedCar:null,
     waitingForPartnerLast:null, myAnnouncedLast:null,
-    spawnTimer:Date.now(), departSpawnTimer:Date.now()-2000,
-    myLane:'stopped', partnerLane:'flowing', fakeLastNum:null
+    spawnTimer:Date.now() - 5000, // 開始時はすぐにバッチが出るように
+    departSpawnTimer:Date.now()-2000,
+    myLane:'stopped', partnerLane:'flowing', fakeLastNum:null,
+    approachBatchRemaining:0, approachLastSpawnAt:0,
+    partnerCarsSpawnedThisCycle:0, partnerLastAnnounced:false
   });
   setBaton('stop');
   logMini.innerHTML = '';
+  updateApproachQueueIndicator(0); // インジケータ初期化
   log('システム', scenarios[name] ? '訓練開始' : name, 'system');
   scenarios[name].init();
   updateHUD();

@@ -954,6 +954,7 @@ const ACTIONS = {
   'last-number':      { icon:'🔢', label:(num)=>`「ラストナンバー ${num} です」`, say:(num)=>`ラストナンバー${num}です` },
   'empty':            { icon:'🅿️', label:'「空車です」', say:'A班、ただいま空車です' },
   'dozo':             { icon:'✅', label:'「どうぞ」', say:'どうぞ' },
+  'ryokai':           { icon:'👌', label:'「了解」', say:'了解' },
   'confirm-last':     { icon:'👀', label:(num)=>`「${num} 了解、確認後流します」`, say:(num)=>`${num}了解、確認後流します` },
   'continue':         { icon:'🔄', label:'「引き続き流します」', say:'引き続き流します' },
   'emergency':        { icon:'🚨', label:'「緊急車両通過！両側停止！」', say:'緊急車両通過、両側停止' }
@@ -1081,8 +1082,9 @@ function processVoiceCommand(text){
   } else if(/空車|くうしゃ|ありません|なし/.test(t)){
     executeAction('empty');
   } else if(/了解|りょうかい|確認/.test(t)){
+    // ラストナンバー待機中なら確認応答、それ以外は単純な「了解」
     if(state.waitingForPartnerLast) executeAction('confirm-last', state.waitingForPartnerLast);
-    else executeAction('continue');
+    else executeAction('ryokai');
   } else if(num && state.waitingForPartnerLast){
     // 数字+了解パターン
     executeAction('confirm-last', state.waitingForPartnerLast);
@@ -1122,11 +1124,10 @@ function executeAction(actionType, param){
       speak('車両接近、流します', {rate:1.05});
       // B班応答
       setTimeout(()=>{
-        log('B班', 'どうぞ', 'partner');
-        speak('どうぞ');
+        log('B班', '了解', 'partner');
+        speak('了解');
         state.score += 5;
         updateHUD();
-        // 進行合図ボタンを促す
         showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
       }, 1400);
       setSuggestions([]);
@@ -1175,6 +1176,15 @@ function executeAction(actionType, param){
       setSuggestions([]);
       break;
 
+    case 'ryokai':
+      log('A班(自分)', '了解', 'me');
+      speak('了解');
+      state.score += 5;
+      updateHUD();
+      showHint('✓ 了解応答OK。<br>対向車を観察 → ラスト宣言を待ちましょう', 4500);
+      setSuggestions([]);
+      break;
+
     case 'confirm-last':
       if(!state.waitingForPartnerLast){
         showHint('B班からラストナンバー宣言がありません', 2500);
@@ -1194,17 +1204,14 @@ function executeAction(actionType, param){
       speak('引き続き流します');
       state.score += 10;
       updateHUD();
-      showHint('✓ 流動継続。<br>そのまま <strong>進行ボタン</strong>で車を流してください', 5000);
-      setSuggestions([]);
-      // 数秒後、自動的にB班が次サイクル準備（5〜8秒）
+      // B班が「了解」と返答
       setTimeout(()=>{
-        if(state.running && !state.waitingForPartnerLast){
-          // 自分の流動を継続しているはず → 一定時間後にB班から「車両接近」連絡
-          // ただし「引き続き流します」と返事した直後は、自分の流動が継続中なので
-          // しばらくしてからB班サイクルに移る
-          // → 何もせず次のラスト宣言待ちにする
-        }
-      }, 5000);
+        log('B班', '了解', 'partner');
+        speak('了解');
+        showHint('✓ B班了解。<br>そのまま <strong>進行ボタン</strong>で車を流してください', 5000);
+        updateHUD();
+      }, 1200);
+      setSuggestions([]);
       break;
 
     case 'emergency':
@@ -1547,8 +1554,8 @@ function startPartnerCycle(){
   state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
   state.waitingForPartnerLast = null;
   updateHUD();
-  showHint('📻 B班から接近通報。<br>「どうぞ」と応答してください', 5000);
-  setSuggestions([{action:'dozo', urgent:true}]);
+  showHint('📻 B班から接近通報。<br>「了解」と応答してください', 5000);
+  setSuggestions([{action:'ryokai', urgent:true}]);
 }
 
 // ★ A班ラストナンバー宣言後、B班が次のサイクルに入る分岐

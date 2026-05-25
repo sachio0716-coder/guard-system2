@@ -1278,15 +1278,13 @@ function spawnVehicle(opts={}){
     attempts++;
   } while(direction==='departing' && existingDepartLastTwos.includes(lastTwo) && attempts < 30);
 
-  // forceLast：このラスト車両は「画面の奥」から登場
-  // 宣言の前に出現させて、宣言時にはまだ遠方(200m手前)にいる状態にする
-  // → 警備員は宣言を聞いてから車を意識して見る時間が10秒以上ある
+  // 座標系：t=1.0(カメラ目前、最大) → t=0.45(画面奥、消失) で対向車は走り去る
+  // ラスト車は t=0.98（警備員のほぼ目前）に出現して、超低速で奥へ下がる
+  // → 警備員は宣言を聞いた瞬間、目の前にナンバーを意識して見られる
   let startT;
   if(direction === 'departing'){
     if(forceLast){
-      // ラスト車は画面の奥(t=0.7前後)から出現
-      // ここから DEPART_END_T(0.45)までゆっくり進む = 約10〜15秒の余裕
-      startT = 0.72;
+      startT = 0.98; // 警備員の目前
     } else {
       startT = 0.95;
     }
@@ -1294,9 +1292,10 @@ function spawnVehicle(opts={}){
     startT = 0;
   }
   const baseSpeed = 0.00035 + Math.random()*0.00008;
-  // ラスト車はゆっくり通過させて視認時間を確保
+  // ラスト車：t=0.98→0.45(距離0.53) を 20秒で通過 = 0.0000265/ms
+  // 通常の departing車の約7%スピード（超低速・じっくり見られる）
   const finalSpeed = isEmergency ? baseSpeed * 1.4
-                   : forceLast ? baseSpeed * 0.7
+                   : forceLast ? 0.0000265   // 約20秒で画面通過
                    : baseSpeed;
 
   const obj = {

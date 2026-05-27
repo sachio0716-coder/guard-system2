@@ -310,6 +310,18 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
 }
 .headlight.left{left:8%}
 .headlight.right{right:8%}
+
+/* スピードタイプ別の視覚効果（教育用ヒント） */
+.vehicle.speed-fast .car-body{
+  filter:brightness(1.1);
+}
+.vehicle.speed-fast .headlight{
+  box-shadow:0 0 18px #fff8c4, 0 0 24px #ffd966 !important;
+}
+.vehicle.speed-slow{
+  opacity:0.92;
+}
+
 .vehicle.dir-departing .headlight{
   background:radial-gradient(ellipse,#ff6b6b 0%,#cc0000 70%,transparent 100%) !important;
   box-shadow:0 0 10px #ff3b30 !important;
@@ -1446,12 +1458,32 @@ function spawnVehicle(opts={}){
   }
   // 車の基本速度（少し遅め、ナンバー視認の余裕を確保）
   const baseSpeed = 0.00025 + Math.random()*0.00006;
+
+  // ★ スピードタイプをランダム決定（速い/普通/遅い）
+  // 確率：速い 25% / 普通 50% / 遅い 25%
+  // 倍率：速い 1.30〜1.40 / 普通 0.95〜1.05 / 遅い 0.70〜0.80
+  let speedMultiplier = 1.0;
+  let speedType = 'normal';
+  if(direction === 'approaching' && !isEmergency && !forceLast && !forceLastReserved){
+    const speedRand = Math.random();
+    if(speedRand < 0.25){
+      speedMultiplier = 1.30 + Math.random() * 0.10; // 速い：1.30〜1.40
+      speedType = 'fast';
+    } else if(speedRand < 0.75){
+      speedMultiplier = 0.95 + Math.random() * 0.10; // 普通：0.95〜1.05
+      speedType = 'normal';
+    } else {
+      speedMultiplier = 0.70 + Math.random() * 0.10; // 遅い：0.70〜0.80
+      speedType = 'slow';
+    }
+  }
+
   // forceLast(旧)：宣言まで待機 → 宣言で加速
   // forceLastReserved(新)：最初から普通速度で通過
   const finalSpeed = isEmergency ? baseSpeed * 1.4
                    : forceLast ? 0.000003   // 待機用の超低速
-                   : forceLastReserved ? baseSpeed  // 普通速度で通過
-                   : baseSpeed;
+                   : forceLastReserved ? baseSpeed
+                   : baseSpeed * speedMultiplier;
 
   const obj = {
     el:v, t:startT, direction:direction,
@@ -1462,8 +1494,13 @@ function spawnVehicle(opts={}){
     plateNum, lastTwo,
     plateEl:null, distEl:null,
     forceLast: forceLast,
-    forceLastReserved: forceLastReserved
+    forceLastReserved: forceLastReserved,
+    speedType: speedType
   };
+
+  // スピードタイプをCSSクラスに反映（視覚的識別用）
+  if(speedType === 'fast') v.classList.add('speed-fast');
+  else if(speedType === 'slow') v.classList.add('speed-slow');
 
   const body = document.createElement('div');
   body.className = 'car-body';
@@ -1802,12 +1839,14 @@ function spawnApproachingBatch(){
   const now = Date.now();
   const approachingCount = state.vehicles.filter(v=>v.direction==='approaching').length;
 
-  // バッチ残数がある間：1.8秒ごとに連続スポーン
+  // バッチ残数がある間：1.2〜2.5秒の動的インターバルで連続スポーン
   if(state.approachBatchRemaining > 0){
     if(now - state.approachLastSpawnAt > state.approachBatchInterval){
       spawnVehicle({direction:'approaching'});
       state.approachBatchRemaining--;
       state.approachLastSpawnAt = now;
+      // 次の車のインターバルもランダム化（自然な車列感）
+      state.approachBatchInterval = 1200 + Math.random()*1300;
       if(state.approachBatchRemaining > 0){
         updateApproachQueueIndicator(state.approachBatchRemaining);
       } else {
@@ -1847,8 +1886,8 @@ function spawnApproachingBatch(){
 
   spawnVehicle({direction:'approaching'});
   state.approachBatchRemaining = batchSize - 1;
-  // 車間隔を広げる（3.0〜4.5秒）：途中で停止判断ができる余裕
-  state.approachBatchInterval = 3000 + Math.random()*1500;
+  // 車間隔を短く（1.2〜2.5秒）：現場リアルな連続性、カウント集中力を要する
+  state.approachBatchInterval = 1200 + Math.random()*1300;
   state.approachLastSpawnAt = now;
   state.spawnTimer = now;
   state.emptyChanceRolled = undefined; // リセット

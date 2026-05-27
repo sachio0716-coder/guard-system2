@@ -770,6 +770,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   </div>
   <select class="scenario-sel" id="scenario-sel">
     <option value="basic">① 基本片交</option>
+    <option value="mission">🎯 ミッション（◯台で停止）</option>
     <option value="emergency">② 緊急車両</option>
     <option value="pedestrian">③ 歩行者対応</option>
     <option value="miscom">④ 無線ミス訓練</option>
@@ -786,6 +787,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
     <div class="chip">スコア: <span id="score">0</span></div>
     <div class="chip">通過: <span id="passed">0</span></div>
     <div class="chip" style="border-color:var(--red)">⚠ <span id="incidents">0</span></div>
+    <div class="chip" id="mission-score-chip" style="display:none;border-color:var(--yellow);background:rgba(255,214,10,0.2)">🌟 <span id="perfect-count">0</span> ⭐ <span id="good-count">0</span></div>
   </div>
 
   <div class="distance-big" id="distance-big">
@@ -905,7 +907,15 @@ const state = {
   approachBatchRemaining: 0,        // このバッチでスポーン残数
   approachBatchInterval: 2000,      // バッチ内のスポーン間隔
   approachLastSpawnAt: 0,           // 最後にスポーンした時刻
-  emptyChanceRolled: undefined      // A班空車パターン判定済フラグ
+  emptyChanceRolled: undefined,     // A班空車パターン判定済フラグ
+  // ▼ ミッションモード（〇台目で止めるゲーム）
+  missionMode: false,               // ミッションモードON/OFF
+  missionTarget: 0,                 // 目標停止台数
+  missionBatchSize: 0,              // 今回のバッチ総数
+  missionCarsPassed: 0,             // このミッションで通過した台数
+  missionActive: false,             // ミッション進行中フラグ
+  perfectCount: 0,                  // PERFECT回数
+  goodCount: 0,                     // GOOD回数
 };
 
 /* =========================================================================
@@ -1276,14 +1286,109 @@ function setBaton(signal){
   }
   // 停止合図 → ラスト宣言をサジェスト
   if(signal === 'stop' && state.lastPassedCar){
-    setTimeout(()=>{
-      if(state.batonSignal === 'stop' && state.lastPassedCar && !state.waitingForPartnerLast){
-        showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> を「ラストナンバー」で宣言してください`, 7000);
-        setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
-      }
-    }, 1500);
+    // ★ ミッションモードの判定
+    if(state.missionMode && state.missionActive){
+      evaluateMission();
+    }
+    // ★ 連続通行の途中で停止した場合の処理：未スポーンの後続車は出てこない
+    const remainingBatch = state.approachBatchRemaining;
+    if(remainingBatch > 0){
+      state.approachBatchRemaining = 0;
+      updateApproachQueueIndicator(0);
+      showHint(`🛑 連続通行を途中で停止！<br>後続${remainingBatch}台は次サイクルへ。<br>最後の車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> をラスト宣言してください`, 7000);
+      setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
+    } else {
+      setTimeout(()=>{
+        if(state.batonSignal === 'stop' && state.lastPassedCar && !state.waitingForPartnerLast){
+          showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> を「ラストナンバー」で宣言してください`, 7000);
+          setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
+        }
+      }, 1500);
+    }
   }
   updateHUD();
+}
+
+// ミッション判定
+function evaluateMission(){
+  const passed = state.missionCarsPassed;
+  const target = state.missionTarget;
+  const diff = Math.abs(passed - target);
+  state.missionActive = false;
+  updateMissionHUD();
+
+  let result, points, emoji, color;
+  if(diff === 0){
+    result = '🌟 PERFECT！';
+    points = 100;
+    emoji = '🌟';
+    color = 'success';
+    state.perfectCount++;
+  } else if(diff === 1){
+    result = '⭐ GOOD！';
+    points = 50;
+    emoji = '⭐';
+    color = 'success';
+    state.goodCount++;
+  } else if(diff === 2){
+    result = '👍 OK';
+    points = 20;
+    emoji = '👍';
+    color = 'success';
+  } else {
+    result = '❌ MISS';
+    points = 0;
+    emoji = '❌';
+    color = 'danger';
+    triggerIncident(`ミッション失敗（${diff}台ズレ）`);
+  }
+
+  state.score += points;
+  updateHUD();
+
+  // 結果表示（大きく目立つように）
+  showMissionResult(result, emoji, target, passed, points, color);
+  // 音声でも結果通知
+  if(diff === 0) speak('パーフェクト', {rate:1.2, pitch:1.2});
+  else if(diff === 1) speak('グッド', {rate:1.15});
+  else if(diff <= 2) speak('オーケー', {rate:1.1});
+  else speak('ミス', {rate:1.0, pitch:0.7});
+}
+
+// ミッション結果のド派手な表示
+function showMissionResult(result, emoji, target, actual, points, type){
+  let el = document.getElementById('mission-result');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'mission-result';
+    el.style.cssText = `
+      position:absolute; top:30%; left:50%; transform:translate(-50%,-50%);
+      z-index:80; padding:24px 32px;
+      border-radius:16px; text-align:center;
+      font-size:28px; font-weight:900; color:#fff;
+      box-shadow:0 12px 40px rgba(0,0,0,0.6);
+      display:none; line-height:1.3;
+      border:3px solid #fff;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  const bg = type === 'success'
+    ? 'linear-gradient(135deg,#34c759,#1b8a3e)'
+    : 'linear-gradient(135deg,#ff3b30,#8a1a14)';
+  el.style.background = bg;
+  el.innerHTML = `
+    <div style="font-size:42px;line-height:1">${emoji}</div>
+    <div style="margin:8px 0">${result}</div>
+    <div style="font-size:14px;color:#fff;opacity:0.9">
+      目標 ${target}台 / 実際 ${actual}台<br>
+      +${points} points
+    </div>
+  `;
+  el.style.display = 'block';
+  el.style.animation = 'alertPop 0.4s ease-out';
+  setTimeout(()=>{
+    if(el) el.style.display = 'none';
+  }, 4000);
 }
 
 document.querySelectorAll('.baton-btn').forEach(b=>{
@@ -1339,7 +1444,8 @@ function spawnVehicle(opts={}){
   } else {
     startT = 0;
   }
-  const baseSpeed = 0.00035 + Math.random()*0.00008;
+  // 車の基本速度（少し遅め、ナンバー視認の余裕を確保）
+  const baseSpeed = 0.00025 + Math.random()*0.00006;
   // forceLast(旧)：宣言まで待機 → 宣言で加速
   // forceLastReserved(新)：最初から普通速度で通過
   const finalSpeed = isEmergency ? baseSpeed * 1.4
@@ -1470,7 +1576,23 @@ function updateVehicles(dt){
       } else {
         state.passed++;
         state.score += obj.emergency ? 30 : 10;
-        if(!obj.emergency) state.lastPassedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo};
+        if(!obj.emergency){
+          state.lastPassedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo};
+          // ★ ミッションモードでのカウントアップ
+          if(state.missionMode && state.missionActive){
+            state.missionCarsPassed++;
+            updateMissionHUD();
+            // 目標を超過してしまった場合の警告
+            if(state.missionCarsPassed > state.missionTarget){
+              const over = state.missionCarsPassed - state.missionTarget;
+              if(over === 1){
+                showHint(`⚠ 目標を1台超過！<br>今すぐ <strong>停止ボタン</strong> を押せばまだGOOD判定！`, 3000);
+              }
+            } else if(state.missionCarsPassed === state.missionTarget){
+              showHint(`🎯 目標の <strong>${state.missionTarget}</strong>台目が通過！<br>今が停止のタイミング！`, 2500);
+            }
+          }
+        }
       }
       obj.el.remove();
       state.vehicles.splice(i,1);
@@ -1502,6 +1624,18 @@ function updateHUD(){
   document.getElementById('b-status').textContent = state.partnerLane === 'flowing' ? '流動' : '停止';
   document.getElementById('my-led').className = 'chip-led ' + (state.myLane === 'flowing' ? 'green' : 'red');
   document.getElementById('b-led').className = 'chip-led ' + (state.partnerLane === 'flowing' ? 'green' : 'red');
+
+  // ミッションスコアチップ表示制御
+  const missionChip = document.getElementById('mission-score-chip');
+  if(missionChip){
+    if(state.missionMode){
+      missionChip.style.display = '';
+      document.getElementById('perfect-count').textContent = state.perfectCount;
+      document.getElementById('good-count').textContent = state.goodCount;
+    } else {
+      missionChip.style.display = 'none';
+    }
+  }
 
   // Front distance
   const approaching = state.vehicles.filter(v=>v.direction === 'approaching');
@@ -1703,21 +1837,69 @@ function spawnApproachingBatch(){
   if(now - state.spawnTimer < interval) return;
 
   // ★ 新バッチ開始
+  // バッチサイズ：2〜10台のランダム
+  // 分布：2〜3台（軽い列・40%）、4〜6台（中規模・40%）、7〜10台（大規模・20%）
   const rand = Math.random();
   let batchSize;
-  if(rand < 0.5) batchSize = 1;
-  else if(rand < 0.8) batchSize = 2;
-  else batchSize = 3 + Math.floor(Math.random()*2);
+  if(rand < 0.4) batchSize = 2 + Math.floor(Math.random()*2);       // 2〜3台
+  else if(rand < 0.8) batchSize = 4 + Math.floor(Math.random()*3);  // 4〜6台
+  else batchSize = 7 + Math.floor(Math.random()*4);                  // 7〜10台
 
   spawnVehicle({direction:'approaching'});
   state.approachBatchRemaining = batchSize - 1;
-  state.approachBatchInterval = 1600 + Math.random()*600;
+  // 車間隔を広げる（3.0〜4.5秒）：途中で停止判断ができる余裕
+  state.approachBatchInterval = 3000 + Math.random()*1500;
   state.approachLastSpawnAt = now;
   state.spawnTimer = now;
   state.emptyChanceRolled = undefined; // リセット
 
+  // ★ ミッションモード：バッチ開始時に目標台数を設定
+  if(state.missionMode){
+    state.missionBatchSize = batchSize;
+    // 目標：バッチサイズの30%〜80%の位置で停止させる（少なくとも2台、最大はサイズ-1）
+    const minTarget = Math.max(2, Math.floor(batchSize * 0.3));
+    const maxTarget = Math.max(minTarget, Math.min(batchSize - 1, Math.floor(batchSize * 0.8)));
+    state.missionTarget = minTarget + Math.floor(Math.random() * (maxTarget - minTarget + 1));
+    state.missionCarsPassed = 0;
+    state.missionActive = true;
+    showMissionAnnouncement(state.missionTarget, batchSize);
+  }
+
   if(batchSize > 1){
     updateApproachQueueIndicator(batchSize - 1);
+  }
+}
+
+// ミッション開始通知
+function showMissionAnnouncement(target, total){
+  const banner = `🎯 ミッション！ 全${total}台中 ${target}台目で停止合図！`;
+  showAlert(banner, 'mission', 5000);
+  speak(`ミッション。${target}台目で停止してください`, {rate:1.1});
+  updateMissionHUD();
+}
+
+// ミッションHUD更新
+function updateMissionHUD(){
+  let el = document.getElementById('mission-hud');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'mission-hud';
+    el.style.cssText = `
+      position:absolute; top:74px; right:8px; z-index:23;
+      background:linear-gradient(135deg,#FFD60A,#FF8500);
+      color:#000; padding:6px 14px; border-radius:8px;
+      font-size:11px; font-weight:900; letter-spacing:0.05em;
+      border:2px solid #fff;
+      box-shadow:0 2px 12px rgba(255,214,10,0.6);
+      display:none; text-align:center; line-height:1.3;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  if(state.missionMode && state.missionActive){
+    el.innerHTML = `🎯 目標 <strong style="font-size:18px">${state.missionTarget}</strong>台目<br>現在 ${state.missionCarsPassed}/${state.missionBatchSize}`;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
   }
 }
 
@@ -1729,17 +1911,27 @@ function updateApproachQueueIndicator(remaining){
     el.id = 'queue-indicator';
     el.style.cssText = `
       position:absolute; top:74px; left:8px; z-index:22;
-      background:rgba(255, 133, 0, 0.95); color:#fff;
       padding:6px 12px; border-radius:6px;
       font-size:11px; font-weight:900; letter-spacing:0.05em;
       border:2px solid #fff;
       box-shadow:0 2px 8px rgba(0,0,0,0.4);
-      display:none;
+      display:none; color:#fff;
     `;
     document.getElementById('stage').appendChild(el);
   }
   if(remaining > 0){
-    el.innerHTML = `🚗 後続あり：あと <strong>${remaining}</strong>台`;
+    // 台数に応じた色変化：1〜2台=オレンジ、3〜5台=赤系、6〜10台=濃い赤（渋滞警告）
+    let bg = 'rgba(255, 133, 0, 0.95)';   // オレンジ
+    let icon = '🚗';
+    if(remaining >= 6){
+      bg = 'rgba(192, 0, 0, 0.95)';      // 濃赤
+      icon = '🚗🚗🚗';
+    } else if(remaining >= 3){
+      bg = 'rgba(255, 80, 0, 0.95)';     // 赤橙
+      icon = '🚗🚗';
+    }
+    el.style.background = bg;
+    el.innerHTML = `${icon} 後続あり：あと <strong style="font-size:14px">${remaining}</strong>台`;
     el.style.display = 'block';
   } else {
     el.style.display = 'none';
@@ -1755,8 +1947,25 @@ const scenarios = {
       state.partnerCarsSpawnedThisCycle = 0;
       state.partnerLastAnnounced = false;
       state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
+      state.missionMode = false;
       setSuggestions([]);
-      // ラスト宣言はゲームループ内で「対向車を最後の1台を出してから5〜6秒後」自動的に行われる
+    },
+    tick(){
+      spawnApproachingBatch();
+    }
+  },
+  mission: {
+    init(){
+      showHint('🎯 <strong>ミッションモード</strong><br>「〇台目で停止」の指示が出ます。<br>狙ったタイミングで停止合図を出してください！', 7000);
+      state.partnerLane = 'flowing';
+      state.partnerCycleStartedAt = Date.now();
+      state.partnerCarsSpawnedThisCycle = 0;
+      state.partnerLastAnnounced = false;
+      state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2);
+      state.missionMode = true;
+      state.perfectCount = 0;
+      state.goodCount = 0;
+      setSuggestions([]);
     },
     tick(){
       spawnApproachingBatch();
@@ -1805,15 +2014,20 @@ function startScenario(name){
     emergencyTriggered:false, emergencyAcknowledged:false,
     lastPassedCar:null, lastDepartedCar:null,
     waitingForPartnerLast:null, myAnnouncedLast:null,
-    spawnTimer:Date.now() - 5000, // 開始時はすぐにバッチが出るように
+    spawnTimer:Date.now() - 5000,
     departSpawnTimer:Date.now()-2000,
     myLane:'stopped', partnerLane:'flowing', fakeLastNum:null,
     approachBatchRemaining:0, approachLastSpawnAt:0,
-    partnerCarsSpawnedThisCycle:0, partnerLastAnnounced:false
+    partnerCarsSpawnedThisCycle:0, partnerLastAnnounced:false,
+    // ミッション関連
+    missionMode:false, missionActive:false,
+    missionTarget:0, missionBatchSize:0, missionCarsPassed:0,
+    perfectCount:0, goodCount:0
   });
   setBaton('stop');
   logMini.innerHTML = '';
-  updateApproachQueueIndicator(0); // インジケータ初期化
+  updateApproachQueueIndicator(0);
+  updateMissionHUD();
   log('システム', scenarios[name] ? '訓練開始' : name, 'system');
   scenarios[name].init();
   updateHUD();

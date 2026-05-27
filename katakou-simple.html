@@ -365,6 +365,11 @@ button{font-family:inherit;cursor:pointer;border:none;background:none;color:inhe
   white-space:nowrap;
   line-height:1;
 }
+.plate.plate-two-digit{
+  /* 2桁ナンバーは少し黄色っぽくして識別を補助 */
+  background:#fff5cc;
+  border-color:#cc9900;
+}
 .plate .region{
   font-size:5px;
   display:block;
@@ -899,6 +904,7 @@ const state = {
   lastPassedCar: null,
   lastDepartedCar: null,
   waitingForPartnerLast: null,
+  waitingForPartnerLastIsTwoDigit: false,
   myAnnouncedLast: null,
   // Conversation flow
   expectedNextAction: null,
@@ -974,17 +980,21 @@ function showHint(text, dur=4500){
 ========================================================================= */
 const ACTIONS = {
   'approach-release': { icon:'📢', label:'「車両接近、流します」', say:'車両接近、流します' },
-  'last-number':      { icon:'🔢', label:(num)=>`「ラストナンバー ${num} です」`, say:(num)=>`ラストナンバー${num}です` },
+  'last-number':      { icon:'🔢',
+                        label:(num, isTwoDigit)=>`「ラストナンバー ${num}（${plateRubi(num, isTwoDigit)}） です」`,
+                        say:(num, isTwoDigit)=>`ラストナンバー${plateToSpeech(num, isTwoDigit)}です` },
   'empty':            { icon:'🅿️', label:'「空車です」', say:'A班、ただいま空車です' },
   'dozo':             { icon:'✅', label:'「どうぞ」', say:'どうぞ' },
   'ryokai':           { icon:'👌', label:'「了解」', say:'了解' },
-  'confirm-last':     { icon:'👀', label:(num)=>`「${num} 了解、確認後流します」`, say:(num)=>`${num}了解、確認後流します` },
+  'confirm-last':     { icon:'👀',
+                        label:(num, isTwoDigit)=>`「${num}（${plateRubi(num, isTwoDigit)}） 了解、確認後流します」`,
+                        say:(num, isTwoDigit)=>`${plateToSpeech(num, isTwoDigit)}了解、確認後流します` },
   'continue':         { icon:'🔄', label:'「引き続き流します」', say:'引き続き流します' },
   'emergency':        { icon:'🚨', label:'「緊急車両通過！両側停止！」', say:'緊急車両通過、両側停止' }
 };
 
 function setSuggestions(items){
-  // items: [{action: 'approach-release', urgent: false, param: '42'}]
+  // items: [{action: 'approach-release', urgent: false, param: '42', isTwoDigit: false}]
   suggestRow.innerHTML = '';
   if(!items || items.length === 0){
     const empty = document.createElement('button');
@@ -998,13 +1008,63 @@ function setSuggestions(items){
     if(!cfg) return;
     const btn = document.createElement('button');
     btn.className = 'suggest-btn' + (item.urgent?' urgent':'');
-    const label = typeof cfg.label === 'function' ? cfg.label(item.param) : cfg.label;
+    const isTwoDigit = item.isTwoDigit || false;
+    const label = typeof cfg.label === 'function' ? cfg.label(item.param, isTwoDigit) : cfg.label;
     btn.innerHTML = `<span class="ic">${cfg.icon}</span><span>${label}</span>`;
     btn.addEventListener('click', ()=>{
-      executeAction(item.action, item.param);
+      executeAction(item.action, item.param, isTwoDigit);
     });
     suggestRow.appendChild(btn);
   });
+}
+
+/* =========================================================================
+   ナンバー読み上げ用：数字を一桁ずつカタカナで読む
+   現場無線では聞き間違い防止のため「ヨンジュウニ」ではなく「ヨンニ」
+   ※ただし2桁ナンバーは普通に「ヨンジュウニ」と読む（業界ルール）
+========================================================================= */
+const DIGIT_KANA = {
+  '0': 'ゼロ',
+  '1': 'イチ',
+  '2': 'ニー',
+  '3': 'サン',
+  '4': 'ヨン',
+  '5': 'ゴー',
+  '6': 'ロク',
+  '7': 'ナナ',
+  '8': 'ハチ',
+  '9': 'キュー'
+};
+// 一桁ずつカタカナ変換（3〜4桁ナンバーの下2桁用）
+// 例: "42" → "ヨンニー" / "05" → "ゼロゴー" / "89" → "ハチキュー"
+function digitsToKana(numStr){
+  return String(numStr).split('').map(d => DIGIT_KANA[d] || d).join('');
+}
+
+// 通常の日本語数字読み（2桁ナンバー専用）
+// 例: 42 → "ヨンジュウニ" / 51 → "ゴジュウイチ" / 89 → "ハチジュウキュウ"
+const TENS_KANA = ['', 'ジュウ', 'ニジュウ', 'サンジュウ', 'ヨンジュウ', 'ゴジュウ', 'ロクジュウ', 'ナナジュウ', 'ハチジュウ', 'キュウジュウ'];
+const ONES_KANA = ['', 'イチ', 'ニ', 'サン', 'ヨン', 'ゴ', 'ロク', 'ナナ', 'ハチ', 'キュウ'];
+function numberToJapanese(num){
+  num = parseInt(num);
+  if(num < 10) return ONES_KANA[num] || 'ゼロ';
+  const tens = Math.floor(num / 10);
+  const ones = num % 10;
+  return TENS_KANA[tens] + ONES_KANA[ones];
+}
+
+// ナンバー文字列から音声読み上げを生成（桁数で読み方を切替）
+function plateToSpeech(plate, isTwoDigit){
+  if(isTwoDigit){
+    return numberToJapanese(plate); // 2桁ナンバー：「ヨンジュウニ」
+  } else {
+    return digitsToKana(plate);     // 3-4桁ナンバーの下2桁：「ヨンニー」
+  }
+}
+
+// ナンバー表示用の振り仮名（画面表示用）
+function plateRubi(plate, isTwoDigit){
+  return isTwoDigit ? numberToJapanese(plate) : digitsToKana(plate);
 }
 
 /* =========================================================================
@@ -1140,7 +1200,17 @@ function stopPTT(){
 /* =========================================================================
    ACTION EXECUTION
 ========================================================================= */
-function executeAction(actionType, param){
+function executeAction(actionType, param, isTwoDigit){
+  // isTwoDigit が未指定の場合は state から推定
+  if(isTwoDigit === undefined){
+    if(actionType === 'last-number' && state.lastPassedCar){
+      isTwoDigit = state.lastPassedCar.isTwoDigit || false;
+    } else if(actionType === 'confirm-last'){
+      isTwoDigit = state.waitingForPartnerLastIsTwoDigit || false;
+    } else {
+      isTwoDigit = false;
+    }
+  }
   switch(actionType){
     case 'approach-release':
       log('A班(自分)', '車両接近、流します', 'me');
@@ -1162,16 +1232,16 @@ function executeAction(actionType, param){
         return;
       }
       const num = param || state.lastPassedCar.lastTwo;
-      log('A班(自分)', `ラストナンバー ${num} です`, 'me');
-      speak(`ラストナンバー ${num} です`);
+      const numIs2 = isTwoDigit; // ローカルに保持
+      log('A班(自分)', `ラストナンバー ${num}（${plateRubi(num, numIs2)}） です`, 'me');
+      speak(`ラストナンバー${plateToSpeech(num, numIs2)}です`);
       state.myAnnouncedLast = num;
       setTimeout(()=>{
-        log('B班', `${num} 了解、確認後流します`, 'partner');
-        speak(`${num} 了解、確認後流します`);
+        log('B班', `${num}（${plateRubi(num, numIs2)}） 了解、確認後流します`, 'partner');
+        speak(`${plateToSpeech(num, numIs2)}了解、確認後流します`);
         state.score += 15;
         updateHUD();
         showHint(`B班がラストナンバー確認中。<br>こちらは停止合図維持、B班の流動開始を待ちましょう`, 5000);
-        // 数秒後にB班が流動サイクル開始（または空車パターン）
         setTimeout(()=>{ if(state.running) startPartnerNextCycle(); }, 4500);
       }, 1400);
       setSuggestions([]);
@@ -1219,11 +1289,12 @@ function executeAction(actionType, param){
         return;
       }
       const lastNum = param || state.waitingForPartnerLast;
-      log('A班(自分)', `${lastNum} 了解、確認後流します`, 'me');
-      speak(`${lastNum} 了解、確認後流します`);
+      const lastIs2 = isTwoDigit;
+      log('A班(自分)', `${lastNum}（${plateRubi(lastNum, lastIs2)}） 了解、確認後流します`, 'me');
+      speak(`${plateToSpeech(lastNum, lastIs2)}了解、確認後流します`);
       state.score += 15;
       updateHUD();
-      showHint(`ナンバー <strong>${lastNum}</strong> の対向車を視認後、こちらから流動開始！`, 5500);
+      showHint(`ナンバー <strong>${lastNum}（${plateRubi(lastNum, lastIs2)}）</strong> の対向車を視認後、こちらから流動開始！`, 5500);
       setSuggestions([]);
       break;
 
@@ -1304,16 +1375,18 @@ function setBaton(signal){
     }
     // ★ 連続通行の途中で停止した場合の処理：未スポーンの後続車は出てこない
     const remainingBatch = state.approachBatchRemaining;
+    const lpcIs2 = state.lastPassedCar.isTwoDigit || false;
     if(remainingBatch > 0){
       state.approachBatchRemaining = 0;
       updateApproachQueueIndicator(0);
-      showHint(`🛑 連続通行を途中で停止！<br>後続${remainingBatch}台は次サイクルへ。<br>最後の車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> をラスト宣言してください`, 7000);
-      setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
+      showHint(`🛑 連続通行を途中で停止！<br>後続${remainingBatch}台は次サイクルへ。<br>最後の車のナンバー <strong>${state.lastPassedCar.lastTwo}（${plateRubi(state.lastPassedCar.lastTwo, lpcIs2)}）</strong> をラスト宣言してください`, 7000);
+      setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true, isTwoDigit:lpcIs2}]);
     } else {
       setTimeout(()=>{
         if(state.batonSignal === 'stop' && state.lastPassedCar && !state.waitingForPartnerLast){
-          showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}</strong> を「ラストナンバー」で宣言してください`, 7000);
-          setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true}]);
+          const is2 = state.lastPassedCar.isTwoDigit || false;
+          showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}（${plateRubi(state.lastPassedCar.lastTwo, is2)}）</strong> を「ラストナンバー」で宣言してください`, 7000);
+          setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true, isTwoDigit:is2}]);
         }
       }, 1500);
     }
@@ -1425,18 +1498,31 @@ function spawnVehicle(opts={}){
 
   // ナンバー生成（既に画面上にある対向車と被らないように）
   let plateNum, lastTwo;
+  let isTwoDigit = false; // 2桁ナンバーかどうか
   if(forceLastReserved && opts.plateNum && opts.lastTwo){
     // 予約済みナンバーを使用
     plateNum = opts.plateNum;
     lastTwo = opts.lastTwo;
+    isTwoDigit = opts.isTwoDigit || false;
   } else {
     const existingDepartLastTwos = state.vehicles
       .filter(x=>x.direction==='departing')
       .map(x=>x.lastTwo);
     let attempts = 0;
     do {
-      plateNum = String(Math.floor(Math.random()*9000)+1000);
-      lastTwo = plateNum.substr(2,2);
+      // ★ 20%確率で2桁ナンバー（10〜99）、80%で4桁ナンバー（1000〜9999）
+      if(Math.random() < 0.20){
+        // 2桁ナンバー：旧車・小型車・原付など
+        const num2 = Math.floor(Math.random()*90)+10; // 10〜99
+        plateNum = String(num2);
+        lastTwo = plateNum; // 2桁の場合はそのまま下2桁
+        isTwoDigit = true;
+      } else {
+        // 通常の4桁ナンバー
+        plateNum = String(Math.floor(Math.random()*9000)+1000);
+        lastTwo = plateNum.substr(2,2);
+        isTwoDigit = false;
+      }
       attempts++;
     } while(direction==='departing' && existingDepartLastTwos.includes(lastTwo) && attempts < 30);
   }
@@ -1495,7 +1581,8 @@ function spawnVehicle(opts={}){
     plateEl:null, distEl:null,
     forceLast: forceLast,
     forceLastReserved: forceLastReserved,
-    speedType: speedType
+    speedType: speedType,
+    isTwoDigit: isTwoDigit
   };
 
   // スピードタイプをCSSクラスに反映（視覚的識別用）
@@ -1514,10 +1601,16 @@ function spawnVehicle(opts={}){
     v.appendChild(siren);
   }
 
-  // Plate
+  // Plate（2桁ナンバーは・・-XX形式、4桁ナンバーはXX-XX形式）
   const plate = document.createElement('div');
   plate.className = 'plate';
-  plate.innerHTML = `<span class="region">福井 500</span>${plateNum.substr(0,2)}-${plateNum.substr(2,2)}`;
+  if(isTwoDigit){
+    // 2桁ナンバー：実物のように「・・ XX」形式（左側ハイフン）
+    plate.innerHTML = `<span class="region">福井 500</span>・・-${plateNum.padStart(2,'0')}`;
+    plate.classList.add('plate-two-digit');
+  } else {
+    plate.innerHTML = `<span class="region">福井 500</span>${plateNum.substr(0,2)}-${plateNum.substr(2,2)}`;
+  }
   v.appendChild(plate);
   obj.plateEl = plate;
 
@@ -1572,7 +1665,7 @@ function updateVehicles(dt){
       obj.t -= obj.speed * dt;
       updateVehiclePosition(obj);
       if(obj.t <= DEPART_END_T){
-        state.lastDepartedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo};
+        state.lastDepartedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo, isTwoDigit:obj.isTwoDigit};
         if(state.waitingForPartnerLast && obj.lastTwo === state.waitingForPartnerLast){
           showAlert('✓ ラストナンバー ' + obj.lastTwo + ' 通過確認！', 'success', 2500);
           showHint(`B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>「車両接近、流します」を発信してください`, 6000);
@@ -1614,7 +1707,7 @@ function updateVehicles(dt){
         state.passed++;
         state.score += obj.emergency ? 30 : 10;
         if(!obj.emergency){
-          state.lastPassedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo};
+          state.lastPassedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo, isTwoDigit:obj.isTwoDigit};
           // ★ ミッションモードでのカウントアップ
           if(state.missionMode && state.missionActive){
             state.missionCarsPassed++;
@@ -1778,18 +1871,20 @@ function announcePartnerLastNumber(){
   // ラスト車両を確実に生成（指定ナンバーで）
   const lastCar = spawnVehicle({direction:'departing', forceLast:true});
   const lastTwo = lastCar.lastTwo;
-  announcePartnerLastNumberFor(lastTwo);
-  // 新規対向車のスポーン停止（このラスト車両で終わり）
+  announcePartnerLastNumberFor(lastTwo, lastCar.isTwoDigit);
   state.departSpawnTimer = Date.now() + 9999999;
 }
 
 // ラスト車宣言を行う（音声＆ログ）。実際の車はこの後10秒後に普通速度で出現
-function announcePartnerLastNumberFor(lastTwo){
+function announcePartnerLastNumberFor(lastTwo, isTwoDigit){
+  isTwoDigit = isTwoDigit || false;
   state.waitingForPartnerLast = lastTwo;
-  log('B班', `B班、ラストナンバー ${lastTwo} です`, 'partner');
-  speak(`B班、ラストナンバー ${lastTwo} です`);
-  showHint(`📻 B班ラスト <strong>${lastTwo}</strong>！<br>まもなくその車が画面に来ます。視認後に「確認後流します」`, 10000);
-  setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true}]);
+  state.waitingForPartnerLastIsTwoDigit = isTwoDigit;
+  log('B班', `B班、ラストナンバー ${lastTwo}（${plateRubi(lastTwo, isTwoDigit)}） です`, 'partner');
+  speak(`B班、ラストナンバー${plateToSpeech(lastTwo, isTwoDigit)}です`);
+  const digitsHint = isTwoDigit ? '【2桁ナンバー！普通読み】' : '【4桁ナンバーの下2桁】';
+  showHint(`📻 B班ラスト <strong>${lastTwo}（${plateRubi(lastTwo, isTwoDigit)}）</strong> ${digitsHint}<br>まもなくその車が画面に来ます。視認後に「確認後流します」`, 10000);
+  setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true, isTwoDigit:isTwoDigit}]);
 }
 
 function announceFakeLastNumber(){
@@ -1807,12 +1902,16 @@ function announceFakeLastNumber(){
     attempts++;
   } while(fakeNum === realLastCar.lastTwo && attempts < 20);
 
+  // 偽ナンバーの桁数は実車両に合わせる（読み方の混乱を避ける）
+  const fakeIsTwoDigit = realLastCar.isTwoDigit || false;
+
   state.fakeLastNum = fakeNum;
   state.waitingForPartnerLast = fakeNum;
-  log('B班', `B班、ラストナンバー ${fakeNum} です`, 'partner');
-  speak(`B班、ラストナンバー ${fakeNum} です`);
-  showHint(`⚠ B班「ラスト <strong>${fakeNum}</strong>」<br>実際の通過車のナンバーをよく見て！違ったら流してはダメ`, 8000);
-  setSuggestions([{action:'confirm-last', param:fakeNum}]);
+  state.waitingForPartnerLastIsTwoDigit = fakeIsTwoDigit;
+  log('B班', `B班、ラストナンバー ${fakeNum}（${plateRubi(fakeNum, fakeIsTwoDigit)}） です`, 'partner');
+  speak(`B班、ラストナンバー${plateToSpeech(fakeNum, fakeIsTwoDigit)}です`);
+  showHint(`⚠ B班「ラスト <strong>${fakeNum}（${plateRubi(fakeNum, fakeIsTwoDigit)}）</strong>」<br>実際の通過車のナンバーをよく見て！違ったら流してはダメ`, 8000);
+  setSuggestions([{action:'confirm-last', param:fakeNum, isTwoDigit:fakeIsTwoDigit}]);
 
   // 新規対向車のスポーン停止
   state.departSpawnTimer = Date.now() + 9999999;
@@ -2052,7 +2151,7 @@ function startScenario(name){
     score:0, passed:0, incidents:0,
     emergencyTriggered:false, emergencyAcknowledged:false,
     lastPassedCar:null, lastDepartedCar:null,
-    waitingForPartnerLast:null, myAnnouncedLast:null,
+    waitingForPartnerLast:null, waitingForPartnerLastIsTwoDigit:false, myAnnouncedLast:null,
     spawnTimer:Date.now() - 5000,
     departSpawnTimer:Date.now()-2000,
     myLane:'stopped', partnerLane:'flowing', fakeLastNum:null,
@@ -2104,20 +2203,34 @@ function gameLoop(ts){
         // まず音声宣言だけ行い、約10秒後に普通速度で実際の車を出現させる
         state.partnerLastAnnounced = true;
         // ラスト用のランダムナンバー生成（既存対向車と被らないように）
+        // 20%確率で2桁ナンバー
         const existingDeparting = state.vehicles.filter(v=>v.direction==='departing').map(v=>v.lastTwo);
-        let plateNum, lastTwo;
+        let plateNum, lastTwo, isTwoDigit;
         do {
-          plateNum = String(Math.floor(Math.random()*9000)+1000);
-          lastTwo = plateNum.substr(2,2);
+          if(Math.random() < 0.20){
+            // 2桁ナンバー
+            const num2 = Math.floor(Math.random()*90)+10;
+            plateNum = String(num2);
+            lastTwo = plateNum;
+            isTwoDigit = true;
+          } else {
+            // 4桁ナンバー
+            plateNum = String(Math.floor(Math.random()*9000)+1000);
+            lastTwo = plateNum.substr(2,2);
+            isTwoDigit = false;
+          }
         } while(existingDeparting.includes(lastTwo));
         // 宣言（音声＆ログ）を先に行う
-        announcePartnerLastNumberFor(lastTwo);
+        announcePartnerLastNumberFor(lastTwo, isTwoDigit);
         // 約10秒後に実際のラスト車を画面奥から普通速度で出現させる
         const reservedLastTwo = lastTwo;
         const reservedPlateNum = plateNum;
+        const reservedIsTwoDigit = isTwoDigit;
         setTimeout(()=>{
           if(state.running && state.waitingForPartnerLast === reservedLastTwo){
-            spawnVehicle({direction:'departing', forceLastReserved:true, plateNum:reservedPlateNum, lastTwo:reservedLastTwo});
+            spawnVehicle({direction:'departing', forceLastReserved:true,
+                          plateNum:reservedPlateNum, lastTwo:reservedLastTwo,
+                          isTwoDigit:reservedIsTwoDigit});
           }
         }, 10000);
         // 新規対向車のスポーン停止

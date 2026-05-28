@@ -1,92 +1,2390 @@
-// =====================================================
-// 片交シミュレーター Service Worker
-// オフライン動作・自動更新対応
-// =====================================================
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d1117">
+<title>片交シミュ｜越前警備</title>
 
-// バージョンは更新時に手動でインクリメント
-// （新しい番号にすると、全ユーザーの端末で自動的に最新版に切り替わる）
-const CACHE_VERSION = 'v1.1.2';
-const CACHE_NAME = 'katakou-sim-' + CACHE_VERSION;
+<!-- ===== PWA Setup ===== -->
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="片交シミュ">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+:root{
+  --bg:#0d1117;
+  --panel:#161b22;
+  --edge:#30363d;
+  --text:#e6edf3;
+  --text-dim:#8b949e;
+  --yellow:#ffd60a;
+  --orange:#ff8500;
+  --red:#ff3b30;
+  --green:#34c759;
+  --blue:#58a6ff;
+  --road:#2a2a2a;
+  --cone:#ff6b35;
+}
+html,body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'BIZ UDPGothic','Hiragino Sans','Yu Gothic',sans-serif;
+  height:100vh;
+  width:100vw;
+  overflow:hidden;
+  font-feature-settings:"palt";
+  touch-action:manipulation;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;font-size:inherit}
 
-// キャッシュするファイル一覧
-const ASSETS = [
-  './katakou-simple.html',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './apple-touch-icon.png',
-  './favicon-32.png'
-];
+.app{
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  height:100dvh;
+}
 
-// インストール時：必要ファイルをキャッシュ
-self.addEventListener('install', (event) => {
-  console.log('[SW] Install:', CACHE_VERSION);
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting()) // 新版即時有効化
-  );
-});
+/* ========== Top Bar ========== */
+.topbar{
+  background:#0d1117;
+  border-bottom:1px solid var(--edge);
+  padding:8px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  flex-shrink:0;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  font-weight:900;
+}
+.brand-dot{
+  width:8px;
+  height:8px;
+  background:var(--yellow);
+  border-radius:2px;
+  box-shadow:0 0 8px var(--yellow);
+  animation:dot 2s infinite;
+}
+@keyframes dot{
+  0%,100%{opacity:1}
+  50%{opacity:0.4}
+}
+.scenario-sel{
+  background:var(--panel);
+  border:1px solid var(--edge);
+  color:var(--text);
+  padding:6px 10px;
+  border-radius:6px;
+  font-size:12px;
+  font-weight:700;
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:24px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23ffd60a' d='M6 8L0 0h12z'/></svg>");
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+}
 
-// アクティブ化時：古いキャッシュを削除
-self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate:', CACHE_VERSION);
-  event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys
-          .filter(key => key.startsWith('katakou-sim-') && key !== CACHE_NAME)
-          .map(key => {
-            console.log('[SW] Delete old cache:', key);
-            return caches.delete(key);
-          })
-      );
-    }).then(() => self.clients.claim())
-  );
-});
+/* ========== Stage (POV) ========== */
+.stage{
+  flex:1;
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(180deg,
+    #1e3a5f 0%,
+    #4a6b8a 25%,
+    #9bb5cc 45%,
+    #c9d6dd 55%,
+    #2c2c2c 56%,
+    #1a1a1a 100%);
+  min-height:0;
+}
+.sun{
+  position:absolute;
+  top:18%;
+  right:14%;
+  width:40px;height:40px;
+  background:radial-gradient(circle,#ffd966 0%,#ffb84d 60%,transparent 70%);
+  border-radius:50%;
+  filter:blur(2px);
+}
 
-// fetch時：Cache-first戦略
-// ただしHTMLとmanifestは Network-first（更新を取りに行く）
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+/* Status badges */
+.status-row{
+  position:absolute;
+  top:8px;
+  left:8px;
+  right:8px;
+  z-index:20;
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.chip{
+  background:rgba(0,0,0,0.75);
+  border:1px solid var(--edge);
+  padding:4px 10px;
+  border-radius:12px;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:0.05em;
+  backdrop-filter:blur(8px);
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.chip-led{
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--text-dim);
+}
+.chip-led.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.chip-led.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.distance-big{
+  position:absolute;
+  top:40px;
+  right:8px;
+  z-index:20;
+  background:rgba(0,0,0,0.85);
+  padding:6px 12px;
+  border-radius:8px;
+  border:1px solid var(--yellow);
+  font-family:'Consolas',monospace;
+  font-size:22px;
+  font-weight:900;
+  color:var(--yellow);
+  line-height:1;
+  text-align:center;
+  min-width:80px;
+}
+.distance-big.warning{color:var(--orange);border-color:var(--orange)}
+.distance-big.danger{color:var(--red);border-color:var(--red);animation:dot 0.5s infinite}
+.distance-big-label{
+  font-size:8px;
+  letter-spacing:0.2em;
+  color:var(--text-dim);
+  display:block;
+  margin-top:2px;
+}
 
-  // GET以外は素通し
-  if (event.request.method !== 'GET') return;
+/* Alerts */
+.alert{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  z-index:50;
+  background:var(--red);
+  color:#fff;
+  padding:14px 24px;
+  border-radius:8px;
+  font-size:15px;
+  font-weight:900;
+  box-shadow:0 8px 32px rgba(255,59,48,0.6);
+  display:none;
+  text-align:center;
+  max-width:90%;
+}
+.alert.show{display:block;animation:alertPop 0.3s ease-out}
+.alert.success{background:var(--green);box-shadow:0 8px 32px rgba(52,199,89,0.6)}
+@keyframes alertPop{
+  0%{transform:translate(-50%,-50%) scale(0.7);opacity:0}
+  100%{transform:translate(-50%,-50%) scale(1);opacity:1}
+}
 
-  // HTMLとmanifestはNetwork-first（更新優先）
-  const isCritical = url.pathname.endsWith('.html') ||
-                     url.pathname.endsWith('manifest.json');
+/* Road */
+.road{
+  position:absolute;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:100%;
+  height:44%;
+  pointer-events:none;
+}
+.road-surface{
+  position:absolute;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:140%;
+  height:100%;
+  background:linear-gradient(180deg,transparent 0%,rgba(0,0,0,0.3) 100%),var(--road);
+  clip-path:polygon(35% 0%, 65% 0%, 100% 100%, 0% 100%);
+}
+.road-center{
+  position:absolute;
+  left:50%;
+  bottom:0;
+  width:6px;
+  height:100%;
+  background:repeating-linear-gradient(180deg,#f5f5dc 0,#f5f5dc 30px,transparent 30px,transparent 60px);
+  transform:translateX(-50%);
+  clip-path:polygon(40% 0%, 60% 0%, 100% 100%, 0% 100%);
+  opacity:0.7;
+}
+.road-edge{position:absolute;bottom:0;width:4px;height:100%;background:#f5f5dc;opacity:0.5}
+.road-edge.left{left:35%;transform:skewX(-30deg);transform-origin:top}
+.road-edge.right{right:35%;transform:skewX(30deg);transform-origin:top}
 
-  if (isCritical) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // 成功したらキャッシュ更新
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request)) // オフラインならキャッシュから
-    );
+/* Peripheral cones */
+.peripheral-cone{
+  position:absolute;
+  bottom:-12px;
+  width:0;
+  height:0;
+  border-left:24px solid transparent;
+  border-right:24px solid transparent;
+  border-bottom:50px solid var(--cone);
+  filter:drop-shadow(0 -6px 12px rgba(0,0,0,0.6));
+  z-index:6;
+}
+.peripheral-cone::after{
+  content:'';
+  position:absolute;
+  top:18px;
+  left:-18px;
+  width:36px;
+  height:5px;
+  background:#fff;
+}
+.peripheral-cone.l1{left:-12px}
+.peripheral-cone.l2{left:60px;transform:scale(0.7)}
+.peripheral-cone.r1{right:-12px}
+.peripheral-cone.r2{right:60px;transform:scale(0.7)}
+
+.behind-tag{
+  position:absolute;
+  bottom:8px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:8;
+  background:rgba(0,0,0,0.7);
+  border:1px dashed var(--cone);
+  padding:3px 10px;
+  border-radius:4px;
+  font-size:9px;
+  color:var(--text-dim);
+  letter-spacing:0.1em;
+  white-space:nowrap;
+}
+
+/* Vehicles */
+.vehicles{position:absolute;inset:0;pointer-events:none;z-index:5}
+.vehicle{
+  position:absolute;
+  left:50%;
+}
+.car-body{
+  position:relative;
+  border-radius:6px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.6);
+}
+.windshield{
+  position:absolute;
+  top:15%;
+  left:15%;
+  right:15%;
+  height:35%;
+  background:linear-gradient(180deg,#1e3a5f 0%,#4a6b8a 100%);
+  border-radius:4px;
+}
+.headlight{
+  position:absolute;
+  bottom:5%;
+  width:8px;
+  height:4px;
+  background:radial-gradient(ellipse,#fff8c4 0%,#ffd966 70%,transparent 100%);
+  border-radius:50%;
+  box-shadow:0 0 12px #fff8c4;
+}
+.headlight.left{left:8%}
+.headlight.right{right:8%}
+
+/* スピードタイプ別の視覚効果（教育用ヒント） */
+.vehicle.speed-fast .car-body{
+  filter:brightness(1.1);
+}
+.vehicle.speed-fast .headlight{
+  box-shadow:0 0 18px #fff8c4, 0 0 24px #ffd966 !important;
+}
+.vehicle.speed-slow{
+  opacity:0.92;
+}
+
+.vehicle.dir-departing .headlight{
+  background:radial-gradient(ellipse,#ff6b6b 0%,#cc0000 70%,transparent 100%) !important;
+  box-shadow:0 0 10px #ff3b30 !important;
+}
+.vehicle.dir-departing .windshield{
+  background:linear-gradient(180deg,#0f1f33 0%,#1e3a5f 100%);
+}
+.vehicle.emergency .car-body{
+  background:#fff !important;
+  border:2px solid var(--red);
+}
+.vehicle.emergency .siren{
+  position:absolute;
+  top:-8px;
+  left:50%;
+  transform:translateX(-50%);
+  width:60%;
+  height:8px;
+  background:var(--red);
+  border-radius:4px;
+  animation:siren 0.3s infinite;
+  box-shadow:0 0 16px var(--red);
+}
+@keyframes siren{
+  0%,100%{background:var(--red);box-shadow:0 0 16px var(--red)}
+  50%{background:#fff;box-shadow:0 0 16px #fff}
+}
+.plate{
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  bottom:-2px;
+  background:#fff;
+  color:#000;
+  font-family:'Consolas','Courier New',monospace;
+  font-weight:900;
+  font-size:9px;
+  padding:1px 4px;
+  border-radius:2px;
+  border:1px solid #444;
+  white-space:nowrap;
+  line-height:1;
+}
+.plate.plate-two-digit{
+  /* 2桁ナンバーは少し黄色っぽくして識別を補助 */
+  background:#fff5cc;
+  border-color:#cc9900;
+}
+.plate .region{
+  font-size:5px;
+  display:block;
+  text-align:center;
+  color:#222;
+}
+.distance-tag{
+  position:absolute;
+  left:50%;
+  transform:translateX(-50%);
+  top:-16px;
+  background:#000;
+  color:var(--yellow);
+  padding:1px 6px;
+  border-radius:3px;
+  font-size:9px;
+  font-weight:900;
+  font-family:'Consolas',monospace;
+  white-space:nowrap;
+  border:1px solid var(--yellow);
+}
+
+/* Pedestrian */
+.pedestrian{
+  position:absolute;
+  bottom:8%;
+  transition:left 5s linear;
+  z-index:4;
+  width:14px;
+  height:24px;
+}
+.ped-body{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:8px;height:15px;background:#ec4899;border-radius:2px}
+.ped-head{position:absolute;bottom:15px;left:50%;transform:translateX(-50%);width:6px;height:6px;background:#f4c2a0;border-radius:50%}
+
+/* Player baton */
+.baton-fg{
+  position:absolute;
+  bottom:-20px;
+  right:6%;
+  width:100px;
+  height:220px;
+  z-index:10;
+  pointer-events:none;
+  transform-origin:bottom center;
+  transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+}
+.baton-fg.signal-stop{transform:rotate(-75deg) translateX(30px) translateY(-25px)}
+.baton-fg.signal-go{animation:wave 0.6s infinite ease-in-out}
+.baton-fg.signal-slow{animation:slow 1.2s infinite ease-in-out}
+@keyframes wave{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(30deg)}}
+@keyframes slow{0%,100%{transform:rotate(-5deg) translateY(0)}50%{transform:rotate(-5deg) translateY(-10px)}}
+.glove{
+  position:absolute;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:45px;
+  height:60px;
+  background:linear-gradient(180deg,#fff 0%,#e0e0e0 100%);
+  border-radius:22px 22px 6px 6px;
+  box-shadow:inset -6px 0 12px rgba(0,0,0,0.2),0 -6px 12px rgba(0,0,0,0.4);
+}
+.glove::after{
+  content:'';
+  position:absolute;
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:24px;height:24px;
+  background:radial-gradient(circle,#444 0%,#222 100%);
+  border-radius:50%;
+}
+.baton-stick{
+  position:absolute;
+  bottom:45px;
+  left:50%;
+  transform:translateX(-50%);
+  width:11px;
+  height:160px;
+  background:linear-gradient(180deg,
+    #fff 0%,#fff 30%,
+    #1a1a1a 30%,#1a1a1a 35%,
+    #fff 35%,#fff 65%,
+    #1a1a1a 65%,#1a1a1a 70%,
+    #fff 70%,#fff 100%);
+  border-radius:3px;
+}
+.baton-tip{
+  position:absolute;
+  top:-10px;
+  left:50%;
+  transform:translateX(-50%);
+  width:20px;
+  height:48px;
+  background:radial-gradient(ellipse at center,var(--red) 0%,#cc0000 60%,#660000 100%);
+  border-radius:10px;
+  box-shadow:0 0 25px var(--red),0 0 40px var(--red);
+  animation:glow 1s infinite alternate;
+}
+@keyframes glow{
+  0%{box-shadow:0 0 15px var(--red),0 0 25px var(--red)}
+  100%{box-shadow:0 0 30px var(--red),0 0 45px var(--red),0 0 60px var(--red)}
+}
+.baton-fg.signal-go .baton-tip{
+  background:radial-gradient(ellipse at center,var(--green) 0%,#1b8a3e 60%,#0a4d23 100%);
+  box-shadow:0 0 25px var(--green),0 0 40px var(--green);
+}
+
+/* ========== Bottom Control Panel ========== */
+.controls{
+  background:var(--panel);
+  border-top:2px solid var(--yellow);
+  padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+  flex-shrink:0;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+/* Suggested actions row */
+.suggest-row{
+  display:flex;
+  gap:8px;
+  min-height:48px;
+}
+.suggest-btn{
+  flex:1;
+  background:linear-gradient(180deg,#1f6feb 0%,#1158c7 100%);
+  border:1px solid #58a6ff;
+  border-radius:8px;
+  padding:10px 12px;
+  color:#fff;
+  font-size:13px;
+  font-weight:700;
+  text-align:left;
+  line-height:1.3;
+  box-shadow:0 2px 8px rgba(31,111,235,0.3);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  transition:all 0.15s;
+}
+.suggest-btn:active{transform:scale(0.97)}
+.suggest-btn .ic{
+  font-size:16px;
+  flex-shrink:0;
+}
+.suggest-btn.urgent{
+  background:linear-gradient(180deg,var(--red) 0%,#c1271e 100%);
+  border-color:#ff7b6b;
+  box-shadow:0 2px 8px rgba(255,59,48,0.4);
+  animation:urgentPulse 1.2s infinite;
+}
+@keyframes urgentPulse{
+  0%,100%{box-shadow:0 2px 8px rgba(255,59,48,0.4)}
+  50%{box-shadow:0 2px 16px rgba(255,59,48,0.8)}
+}
+.suggest-btn.empty{
+  background:#21262d;
+  border:1px dashed var(--edge);
+  color:var(--text-dim);
+  font-style:italic;
+  pointer-events:none;
+  justify-content:center;
+}
+
+/* Main action row: baton + PTT */
+.action-row{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr 1.3fr;
+  gap:8px;
+}
+.baton-btn{
+  padding:18px 4px;
+  background:#21262d;
+  border:2px solid var(--edge);
+  border-radius:10px;
+  font-size:14px;
+  font-weight:900;
+  color:var(--text);
+  transition:all 0.1s;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:4px;
+  line-height:1;
+}
+.baton-btn:active{transform:scale(0.95)}
+.baton-btn .ic{font-size:24px;line-height:1}
+.baton-btn.stop{border-color:var(--red)}
+.baton-btn.slow{border-color:var(--orange)}
+.baton-btn.go{border-color:var(--green)}
+.baton-btn.stop.active{background:var(--red);color:#fff;box-shadow:0 0 16px rgba(255,59,48,0.6)}
+.baton-btn.slow.active{background:var(--orange);color:#fff;box-shadow:0 0 16px rgba(255,133,0,0.6)}
+.baton-btn.go.active{background:var(--green);color:#fff;box-shadow:0 0 16px rgba(52,199,89,0.6)}
+
+.ptt-btn{
+  background:linear-gradient(180deg,#30363d 0%,#21262d 100%);
+  border:2px solid var(--yellow);
+  border-radius:10px;
+  padding:6px;
+  font-size:11px;
+  font-weight:900;
+  color:var(--yellow);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  position:relative;
+  transition:all 0.1s;
+  line-height:1.1;
+}
+.ptt-btn .mic-ic{
+  font-size:22px;
+  line-height:1;
+}
+.ptt-btn .ptt-label{
+  font-size:10px;
+  letter-spacing:0.1em;
+}
+.ptt-btn.recording{
+  background:linear-gradient(180deg,var(--red) 0%,#c1271e 100%);
+  color:#fff;
+  border-color:#fff;
+  box-shadow:0 0 0 4px rgba(255,59,48,0.3),0 0 24px var(--red);
+  animation:recPulse 1s infinite;
+}
+@keyframes recPulse{
+  0%,100%{box-shadow:0 0 0 4px rgba(255,59,48,0.3),0 0 24px var(--red)}
+  50%{box-shadow:0 0 0 8px rgba(255,59,48,0.5),0 0 36px var(--red)}
+}
+.ptt-btn:active{transform:scale(0.95)}
+.ptt-btn.unsupported{
+  opacity:0.4;
+  border-color:var(--edge);
+  color:var(--text-dim);
+}
+
+/* Mini log */
+.log-mini{
+  background:#0a0e13;
+  border:1px solid var(--edge);
+  border-radius:6px;
+  padding:6px 8px;
+  font-family:'Consolas','BIZ UDGothic',monospace;
+  font-size:11px;
+  max-height:60px;
+  overflow-y:auto;
+  line-height:1.4;
+}
+.log-entry{
+  padding:1px 0;
+  border-left:2px solid var(--text-dim);
+  padding-left:6px;
+  margin-bottom:1px;
+  color:var(--text-dim);
+}
+.log-entry.me{border-left-color:var(--yellow);color:var(--text)}
+.log-entry.partner{border-left-color:var(--blue);color:#79c0ff}
+.log-entry.system{border-left-color:var(--red);color:#ff7b72}
+
+/* Recognition display */
+.recog-display{
+  position:absolute;
+  bottom:140px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.9);
+  border:2px solid var(--yellow);
+  border-radius:12px;
+  padding:12px 18px;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text);
+  z-index:60;
+  max-width:85%;
+  text-align:center;
+  display:none;
+  box-shadow:0 8px 24px rgba(0,0,0,0.6);
+}
+.recog-display.show{display:block}
+.recog-display .listen-ic{
+  color:var(--red);
+  margin-right:6px;
+  animation:dot 1s infinite;
+}
+
+/* Hint overlay */
+.hint-overlay{
+  position:absolute;
+  top:74px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(255,214,10,0.95);
+  color:#000;
+  padding:10px 14px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:700;
+  z-index:25;
+  max-width:90%;
+  display:none;
+  line-height:1.4;
+  box-shadow:0 4px 16px rgba(0,0,0,0.4);
+}
+.hint-overlay.show{display:block;animation:alertPop 0.3s}
+.hint-overlay::before{
+  content:'💡 ';
+}
+
+/* Tutorial modal */
+.tutorial{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.92);
+  z-index:200;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}
+.tutorial.hidden{display:none}
+.tutorial-card{
+  background:var(--panel);
+  border:2px solid var(--yellow);
+  border-radius:12px;
+  padding:20px;
+  max-width:340px;
+  width:100%;
+  max-height:90vh;
+  overflow-y:auto;
+}
+.tutorial-card h2{
+  font-size:18px;
+  margin-bottom:12px;
+  color:var(--yellow);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.tutorial-card .desc{
+  font-size:13px;
+  line-height:1.6;
+  margin-bottom:14px;
+  color:var(--text);
+}
+.tutorial-card ul{
+  list-style:none;
+  margin-bottom:16px;
+}
+.tutorial-card li{
+  font-size:12px;
+  padding:6px 0;
+  border-bottom:1px solid var(--edge);
+  line-height:1.5;
+}
+.tutorial-card li strong{color:var(--yellow)}
+.tutorial-card .start-btn{
+  background:var(--yellow);
+  color:#000;
+  padding:14px;
+  border-radius:8px;
+  width:100%;
+  font-size:15px;
+  font-weight:900;
+  letter-spacing:0.1em;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--edge);border-radius:2px}
+
+/* Tablet/desktop */
+@media(min-width:600px){
+  .stage{height:auto}
+  .baton-btn{padding:22px 4px;font-size:16px}
+  .baton-btn .ic{font-size:30px}
+  .ptt-btn{font-size:13px}
+  .ptt-btn .mic-ic{font-size:30px}
+  .baton-fg{width:120px;height:280px;right:7%}
+  .baton-stick{height:200px;width:13px}
+  .baton-tip{width:24px;height:56px}
+  .glove{width:55px;height:75px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Tutorial Modal ===== -->
+<div class="tutorial" id="tutorial">
+  <div class="tutorial-card">
+    <h2>🚦 片交シミュレーター</h2>
+    <div class="desc">
+      越前警備株式会社の交通誘導教育用シミュレーター。<br>
+      <strong>実際の無線プロトコル</strong>と<strong>誘導棒操作</strong>を訓練できます。
+    </div>
+    <ul>
+      <li>📱 <strong>誘導棒3ボタン</strong>：停止／徐行／進行を画面下から選択</li>
+      <li>🎙️ <strong>PTTボタン</strong>：長押し中だけ音声認識ON、離すと送信。実際の無線と同じ感覚で訓練可能</li>
+      <li>💬 <strong>サジェスト</strong>：今この瞬間に「言うべきセリフ」が青ボタンで表示されます。タップでもOK</li>
+      <li>🚗 <strong>距離表示</strong>：画面右上に前方車の距離。200m先から見えるので余裕を持って合図を</li>
+      <li>📻 <strong>B班の声</strong>：相方の無線は音声で聞こえます（端末音量ON推奨）</li>
+    </ul>
+    <button class="start-btn" id="start-btn">訓練開始 ▶</button>
+  </div>
+</div>
+
+<div class="app">
+
+<!-- Top -->
+<div class="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    片交シミュ
+  </div>
+  <select class="scenario-sel" id="scenario-sel">
+    <option value="basic">① 基本片交</option>
+    <option value="mission">🎯 ミッション（◯台で停止）</option>
+    <option value="emergency">② 緊急車両</option>
+    <option value="pedestrian">③ 歩行者対応</option>
+    <option value="miscom">④ 無線ミス訓練</option>
+  </select>
+</div>
+
+<!-- Stage -->
+<div class="stage" id="stage">
+  <div class="sun"></div>
+
+  <div class="status-row">
+    <div class="chip"><span class="chip-led red" id="my-led"></span>自側 <span id="my-status">停止</span></div>
+    <div class="chip"><span class="chip-led green" id="b-led"></span>B班 <span id="b-status">流動</span></div>
+    <div class="chip">スコア: <span id="score">0</span></div>
+    <div class="chip">通過: <span id="passed">0</span></div>
+    <div class="chip" style="border-color:var(--red)">⚠ <span id="incidents">0</span></div>
+    <div class="chip" id="mission-score-chip" style="display:none;border-color:var(--yellow);background:rgba(255,214,10,0.2)">🌟 <span id="perfect-count">0</span> ⭐ <span id="good-count">0</span></div>
+  </div>
+
+  <div class="distance-big" id="distance-big">
+    ---
+    <span class="distance-big-label">前方</span>
+  </div>
+
+  <div class="hint-overlay" id="hint-overlay"></div>
+  <div class="alert" id="alert"></div>
+
+  <!-- Road -->
+  <div class="road">
+    <div class="road-surface"></div>
+    <div class="road-edge left"></div>
+    <div class="road-center"></div>
+    <div class="road-edge right"></div>
+  </div>
+
+  <div class="peripheral-cone l1"></div>
+  <div class="peripheral-cone l2"></div>
+  <div class="peripheral-cone r1"></div>
+  <div class="peripheral-cone r2"></div>
+
+  <div class="behind-tag">↓ 工事区間（背後）／対向はB班が管制</div>
+
+  <!-- Vehicles -->
+  <div class="vehicles" id="vehicles"></div>
+
+  <!-- Player baton -->
+  <div class="baton-fg" id="baton-fg">
+    <div class="baton-stick"><div class="baton-tip"></div></div>
+    <div class="glove"></div>
+  </div>
+
+  <!-- Recognition display -->
+  <div class="recog-display" id="recog-display">
+    <span class="listen-ic">●</span><span id="recog-text">聞いています...</span>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+
+  <!-- Smart suggestions (2 max) -->
+  <div class="suggest-row" id="suggest-row">
+    <button class="suggest-btn empty">— サジェストはここに表示されます —</button>
+  </div>
+
+  <!-- Mini log -->
+  <div class="log-mini" id="log-mini">
+    <div class="log-entry system">システム待機中...</div>
+  </div>
+
+  <!-- Main actions -->
+  <div class="action-row">
+    <button class="baton-btn stop active" data-action="stop">
+      <span class="ic">🛑</span>
+      停止
+    </button>
+    <button class="baton-btn slow" data-action="slow">
+      <span class="ic">⚠</span>
+      徐行
+    </button>
+    <button class="baton-btn go" data-action="go">
+      <span class="ic">🟢</span>
+      進行
+    </button>
+    <button class="ptt-btn" id="ptt-btn">
+      <span class="mic-ic">🎙️</span>
+      <span class="ptt-label">長押して話す</span>
+    </button>
+  </div>
+
+</div>
+
+</div>
+
+<script>
+/* =========================================================================
+   STATE
+========================================================================= */
+const state = {
+  scenario: 'basic',
+  running: false,
+  batonSignal: 'stop',
+  myLane: 'stopped',
+  partnerLane: 'flowing',
+  vehicles: [],
+  pedestrian: null,
+  emergencyTriggered: false,
+  emergencyAcknowledged: false,
+  score: 0,
+  passed: 0,
+  incidents: 0,
+  spawnTimer: 0,
+  departSpawnTimer: 0,
+  lastPassedCar: null,
+  lastDepartedCar: null,
+  waitingForPartnerLast: null,
+  waitingForPartnerLastIsTwoDigit: false,
+  myAnnouncedLast: null,
+  // Conversation flow
+  expectedNextAction: null,
+  pttActive: false,
+  recognition: null,
+  voiceSupported: false,
+  ttsVoice: null,
+  fakeLastNum: null,
+  // ▼ B班サイクル管理
+  partnerCycleStartedAt: 0,     // B班サイクル開始時刻
+  partnerCarsSpawnedThisCycle: 0, // このサイクルで流したB班車両数
+  partnerLastAnnounced: false,    // このサイクルでラスト宣言済か
+  partnerCycleTargetCount: 3,     // このサイクルで流す台数（毎回決定）
+  // ▼ A班サイクル管理（自分が流している時）
+  myCarsPassedThisCycle: 0,
+  myFlowStartedAt: 0,
+  // ▼ 接近車のバッチ（群れ）管理
+  approachBatchRemaining: 0,        // このバッチでスポーン残数
+  approachBatchInterval: 2000,      // バッチ内のスポーン間隔
+  approachLastSpawnAt: 0,           // 最後にスポーンした時刻
+  emptyChanceRolled: undefined,     // A班空車パターン判定済フラグ
+  // ▼ ミッションモード（〇台目で止めるゲーム）
+  missionMode: false,               // ミッションモードON/OFF
+  missionTarget: 0,                 // 目標停止台数
+  missionBatchSize: 0,              // 今回のバッチ総数
+  missionCarsPassed: 0,             // このミッションで通過した台数
+  missionActive: false,             // ミッション進行中フラグ
+  perfectCount: 0,                  // PERFECT回数
+  goodCount: 0,                     // GOOD回数
+};
+
+/* =========================================================================
+   ELEMENTS
+========================================================================= */
+const stage = document.getElementById('stage');
+const vehiclesLayer = document.getElementById('vehicles');
+const batonFg = document.getElementById('baton-fg');
+const logMini = document.getElementById('log-mini');
+const alertEl = document.getElementById('alert');
+const hintOverlay = document.getElementById('hint-overlay');
+const distanceBig = document.getElementById('distance-big');
+const suggestRow = document.getElementById('suggest-row');
+const pttBtn = document.getElementById('ptt-btn');
+const recogDisplay = document.getElementById('recog-display');
+const recogText = document.getElementById('recog-text');
+
+/* =========================================================================
+   UTILS
+========================================================================= */
+function log(speaker, text, type='partner'){
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + type;
+  entry.innerHTML = `<strong>${speaker}:</strong> ${text}`;
+  logMini.appendChild(entry);
+  logMini.scrollTop = logMini.scrollHeight;
+  // 最大10件まで残す
+  while(logMini.children.length > 10) logMini.removeChild(logMini.firstChild);
+}
+function showAlert(text, type='danger', dur=2000){
+  alertEl.textContent = text;
+  alertEl.className = 'alert show ' + (type==='success'?'success':'');
+  setTimeout(()=>alertEl.classList.remove('show'), dur);
+}
+function showHint(text, dur=4500){
+  hintOverlay.innerHTML = text;
+  hintOverlay.classList.add('show');
+  clearTimeout(hintOverlay._t);
+  hintOverlay._t = setTimeout(()=>hintOverlay.classList.remove('show'), dur);
+}
+
+/* =========================================================================
+   SUGGESTIONS — show 1-2 contextually relevant next actions
+========================================================================= */
+const ACTIONS = {
+  'approach-release': { icon:'📢', label:'「車両接近、流します」', say:'車両接近、流します' },
+  // ▼ NEW: 自側に車両が停止待機中（両側待機状態）→ 接近予告は不要、通過確認のみ
+  'pass-confirmed-release': { icon:'✅', label:'「通過確認、流します」', say:'通過確認、流します' },
+  // ▼ NEW: 自側は空車状態だったが、流動中に新たに車両が接近してきた場合
+  'approach-after-confirm': { icon:'📢', label:'「確認後、車両接近で流します」', say:'確認後、車両接近で流します' },
+  'last-number':      { icon:'🔢',
+                        label:(num, isTwoDigit)=>`「ラストナンバー ${num}（${plateRubi(num, isTwoDigit)}） です」`,
+                        say:(num, isTwoDigit)=>`ラストナンバー${plateToSpeech(num, isTwoDigit)}です` },
+  'empty':            { icon:'🅿️', label:'「空車です」', say:'ただいま空車です' },
+  'dozo':             { icon:'✅', label:'「どうぞ」', say:'どうぞ' },
+  'ryokai':           { icon:'👌', label:'「了解」', say:'了解' },
+  'confirm-last':     { icon:'👀',
+                        label:(num, isTwoDigit)=>`「${num}（${plateRubi(num, isTwoDigit)}） 了解、確認後流します」`,
+                        say:(num, isTwoDigit)=>`${plateToSpeech(num, isTwoDigit)}了解、確認後流します` },
+  'continue':         { icon:'🔄', label:'「引き続き流します」', say:'引き続き流します' },
+  'emergency':        { icon:'🚨', label:'「緊急車両通過！両側停止！」', say:'緊急車両通過、両側停止' }
+};
+
+function setSuggestions(items){
+  // items: [{action: 'approach-release', urgent: false, param: '42', isTwoDigit: false}]
+  suggestRow.innerHTML = '';
+  if(!items || items.length === 0){
+    const empty = document.createElement('button');
+    empty.className = 'suggest-btn empty';
+    empty.textContent = '— 状況を見て次の行動を判断 —';
+    suggestRow.appendChild(empty);
+    return;
+  }
+  items.slice(0,2).forEach(item=>{
+    const cfg = ACTIONS[item.action];
+    if(!cfg) return;
+    const btn = document.createElement('button');
+    btn.className = 'suggest-btn' + (item.urgent?' urgent':'');
+    const isTwoDigit = item.isTwoDigit || false;
+    const label = typeof cfg.label === 'function' ? cfg.label(item.param, isTwoDigit) : cfg.label;
+    btn.innerHTML = `<span class="ic">${cfg.icon}</span><span>${label}</span>`;
+    btn.addEventListener('click', ()=>{
+      executeAction(item.action, item.param, isTwoDigit);
+    });
+    suggestRow.appendChild(btn);
+  });
+}
+
+/* =========================================================================
+   ナンバー読み上げ用：数字を一桁ずつカタカナで読む
+   現場無線では聞き間違い防止のため「ヨンジュウニ」ではなく「ヨンニ」
+   ※ただし2桁ナンバーは普通に「ヨンジュウニ」と読む（業界ルール）
+========================================================================= */
+const DIGIT_KANA = {
+  '0': 'ゼロ',
+  '1': 'イチ',
+  '2': 'ニー',
+  '3': 'サン',
+  '4': 'ヨン',
+  '5': 'ゴー',
+  '6': 'ロク',
+  '7': 'ナナ',
+  '8': 'ハチ',
+  '9': 'キュー'
+};
+// 一桁ずつカタカナ変換（3〜4桁ナンバーの下2桁用）
+// 例: "42" → "ヨンニー" / "05" → "ゼロゴー" / "89" → "ハチキュー"
+function digitsToKana(numStr){
+  return String(numStr).split('').map(d => DIGIT_KANA[d] || d).join('');
+}
+
+// 通常の日本語数字読み（2桁ナンバー専用）
+// 例: 42 → "ヨンジュウニ" / 51 → "ゴジュウイチ" / 89 → "ハチジュウキュウ"
+const TENS_KANA = ['', 'ジュウ', 'ニジュウ', 'サンジュウ', 'ヨンジュウ', 'ゴジュウ', 'ロクジュウ', 'ナナジュウ', 'ハチジュウ', 'キュウジュウ'];
+const ONES_KANA = ['', 'イチ', 'ニ', 'サン', 'ヨン', 'ゴ', 'ロク', 'ナナ', 'ハチ', 'キュウ'];
+function numberToJapanese(num){
+  num = parseInt(num);
+  if(num < 10) return ONES_KANA[num] || 'ゼロ';
+  const tens = Math.floor(num / 10);
+  const ones = num % 10;
+  return TENS_KANA[tens] + ONES_KANA[ones];
+}
+
+// ナンバー文字列から音声読み上げを生成（桁数で読み方を切替）
+function plateToSpeech(plate, isTwoDigit){
+  if(isTwoDigit){
+    return numberToJapanese(plate); // 2桁ナンバー：「ヨンジュウニ」
   } else {
-    // 画像などはCache-first（高速）
-    event.respondWith(
-      caches.match(event.request).then(cached => {
-        return cached || fetch(event.request).then(response => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+    return digitsToKana(plate);     // 3-4桁ナンバーの下2桁：「ヨンニー」
+  }
+}
+
+// ナンバー表示用の振り仮名（画面表示用）
+function plateRubi(plate, isTwoDigit){
+  return isTwoDigit ? numberToJapanese(plate) : digitsToKana(plate);
+}
+
+/* =========================================================================
+   TTS - Speech Synthesis (B班の声)
+========================================================================= */
+function speak(text, opts={}){
+  if(!('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ja-JP';
+  u.rate = opts.rate || 1.05;
+  u.pitch = opts.pitch || 0.85;
+  u.volume = opts.volume || 0.9;
+  if(state.ttsVoice) u.voice = state.ttsVoice;
+  speechSynthesis.speak(u);
+}
+// Load voices
+function initVoice(){
+  if(!('speechSynthesis' in window)) return;
+  const voices = speechSynthesis.getVoices();
+  // Prefer Japanese male voice
+  state.ttsVoice = voices.find(v=>v.lang.startsWith('ja') && /male|otoya|hattori/i.test(v.name))
+                || voices.find(v=>v.lang.startsWith('ja'))
+                || null;
+}
+if('speechSynthesis' in window){
+  speechSynthesis.onvoiceschanged = initVoice;
+  initVoice();
+}
+
+/* =========================================================================
+   SPEECH RECOGNITION (PTT)
+========================================================================= */
+function initRecognition(){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    pttBtn.classList.add('unsupported');
+    pttBtn.querySelector('.ptt-label').textContent = '音声非対応';
+    return;
+  }
+  state.voiceSupported = true;
+  const recog = new SpeechRecognition();
+  recog.lang = 'ja-JP';
+  recog.interimResults = true;
+  recog.continuous = false;
+
+  let finalTranscript = '';
+
+  recog.onstart = ()=>{
+    finalTranscript = '';
+    recogDisplay.classList.add('show');
+    recogText.textContent = '聞いています...';
+  };
+  recog.onresult = (e)=>{
+    let interim = '';
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal) finalTranscript += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    recogText.textContent = finalTranscript + interim;
+  };
+  recog.onerror = (e)=>{
+    console.warn('Speech recognition error:', e.error);
+    recogDisplay.classList.remove('show');
+  };
+  recog.onend = ()=>{
+    recogDisplay.classList.remove('show');
+    if(finalTranscript.trim()){
+      processVoiceCommand(finalTranscript);
+    }
+  };
+  state.recognition = recog;
+}
+initRecognition();
+
+// Match voice command to action
+function processVoiceCommand(text){
+  const t = text.replace(/\s+/g,'').toLowerCase();
+  // Extract numbers
+  const numMatch = text.match(/(\d{1,4})/);
+  const num = numMatch ? numMatch[1].slice(-2).padStart(2,'0') : null;
+
+  if(/緊急|きゅう|きんきゅう/.test(t)){
+    executeAction('emergency');
+  } else if(/ラスト|らすと|ナンバー|なんばー/.test(t) && num){
+    // ラストナンバー宣言
+    if(state.waitingForPartnerLast){
+      // B班宣言への返答（XX 了解）
+      executeAction('confirm-last', state.waitingForPartnerLast);
+    } else {
+      executeAction('last-number', num);
+    }
+  } else if(/どうぞ|どぞ/.test(t)){
+    executeAction('dozo');
+  } else if(/引き続き|ひきつづき/.test(t)){
+    executeAction('continue');
+  } else if(/通過確認/.test(t)){
+    // ▼ NEW: 「通過確認、流します」（両側待機パターン）
+    executeAction('pass-confirmed-release');
+  } else if(/確認後/.test(t) && /接近|車両|せっきん|しゃりょう/.test(t)){
+    // ▼ NEW: 「確認後、車両接近で流します」（自側空車→車到着パターン）
+    executeAction('approach-after-confirm');
+  } else if(/接近|せっきん|ながします|流します/.test(t)){
+    executeAction('approach-release');
+  } else if(/空車|くうしゃ|ありません|なし/.test(t)){
+    executeAction('empty');
+  } else if(/了解|りょうかい|確認/.test(t)){
+    // ラストナンバー待機中なら確認応答、それ以外は単純な「了解」
+    if(state.waitingForPartnerLast) executeAction('confirm-last', state.waitingForPartnerLast);
+    else executeAction('ryokai');
+  } else if(num && state.waitingForPartnerLast){
+    // 数字+了解パターン
+    executeAction('confirm-last', state.waitingForPartnerLast);
+  } else {
+    showHint('「' + text + '」<br>認識できませんでした。もう一度お試しください。', 3500);
+  }
+}
+
+// PTT button events
+pttBtn.addEventListener('touchstart',(e)=>{e.preventDefault();startPTT()});
+pttBtn.addEventListener('touchend',(e)=>{e.preventDefault();stopPTT()});
+pttBtn.addEventListener('mousedown',startPTT);
+pttBtn.addEventListener('mouseup',stopPTT);
+pttBtn.addEventListener('mouseleave',()=>{if(state.pttActive) stopPTT()});
+
+function startPTT(){
+  if(!state.voiceSupported || state.pttActive) return;
+  state.pttActive = true;
+  pttBtn.classList.add('recording');
+  try { state.recognition.start(); }
+  catch(e){ /* already started */ }
+}
+function stopPTT(){
+  if(!state.pttActive) return;
+  state.pttActive = false;
+  pttBtn.classList.remove('recording');
+  try { state.recognition.stop(); } catch(e){}
+}
+
+/* =========================================================================
+   ACTION EXECUTION
+========================================================================= */
+function executeAction(actionType, param, isTwoDigit){
+  // isTwoDigit が未指定の場合は state から推定
+  if(isTwoDigit === undefined){
+    if(actionType === 'last-number' && state.lastPassedCar){
+      isTwoDigit = state.lastPassedCar.isTwoDigit || false;
+    } else if(actionType === 'confirm-last'){
+      isTwoDigit = state.waitingForPartnerLastIsTwoDigit || false;
+    } else {
+      isTwoDigit = false;
+    }
+  }
+  switch(actionType){
+    case 'approach-release':
+      log('A班(自分)', '車両接近、流します', 'me');
+      speak('車両接近、流します', {rate:1.05});
+      // B班応答
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        state.score += 5;
+        updateHUD();
+        showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    // ▼ NEW: 両側待機状態でラスト通過後 → 接近予告不要
+    case 'pass-confirmed-release':
+      log('A班(自分)', '通過確認、流します', 'me');
+      speak('通過確認、流します', {rate:1.05});
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        state.score += 5;
+        updateHUD();
+        showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    // ▼ NEW: 自側空車から接近車到来パターン
+    case 'approach-after-confirm':
+      log('A班(自分)', '確認後、車両接近で流します', 'me');
+      speak('確認後、車両接近で流します', {rate:1.05});
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        state.score += 5;
+        updateHUD();
+        showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    case 'last-number':
+      if(!state.lastPassedCar){
+        showHint('まだ通過車両がありません', 2500);
+        return;
+      }
+      const num = param || state.lastPassedCar.lastTwo;
+      const numIs2 = isTwoDigit; // ローカルに保持
+      log('A班(自分)', `ラストナンバー ${num}（${plateRubi(num, numIs2)}） です`, 'me');
+      speak(`ラストナンバー${plateToSpeech(num, numIs2)}です`);
+      state.myAnnouncedLast = num;
+      setTimeout(()=>{
+        log('B班', `${num}（${plateRubi(num, numIs2)}） 了解、確認後流します`, 'partner');
+        speak(`${plateToSpeech(num, numIs2)}了解、確認後流します`);
+        state.score += 15;
+        updateHUD();
+        showHint(`B班がラストナンバー確認中。<br>こちらは停止合図維持、B班の流動開始を待ちましょう`, 5000);
+        setTimeout(()=>{ if(state.running) startPartnerNextCycle(); }, 4500);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    case 'empty':
+      log('A班(自分)', 'ただいま空車です', 'me');
+      speak('ただいま空車です');
+      setTimeout(()=>{
+        log('B班', '了解、引き続き流します', 'partner');
+        speak('了解、引き続き流します');
+        state.partnerLane = 'flowing';
+        // B班サイクル再開：対向車スポーン継続、ラスト宣言タイミングもリセット
+        state.partnerCarsSpawnedThisCycle = 0;
+        state.partnerLastAnnounced = false;
+        state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2);
+        state.departSpawnTimer = Date.now() - 1500;
+        state.score += 10;
+        updateHUD();
+        showHint('✓ B班が引き続き流動。<br>対向車を観察し、B班のラスト宣言を待ちましょう', 6000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    case 'dozo':
+      log('A班(自分)', 'どうぞ', 'me');
+      speak('どうぞ');
+      state.score += 5;
+      updateHUD();
+      setSuggestions([]);
+      break;
+
+    case 'ryokai':
+      log('A班(自分)', '了解', 'me');
+      speak('了解');
+      state.score += 5;
+      updateHUD();
+      showHint('✓ 了解応答OK。<br>対向車を観察 → ラスト宣言を待ちましょう', 4500);
+      setSuggestions([]);
+      break;
+
+    case 'confirm-last':
+      if(!state.waitingForPartnerLast){
+        showHint('B班からラストナンバー宣言がありません', 2500);
+        return;
+      }
+      const lastNum = param || state.waitingForPartnerLast;
+      const lastIs2 = isTwoDigit;
+      log('A班(自分)', `${lastNum}（${plateRubi(lastNum, lastIs2)}） 了解、確認後流します`, 'me');
+      speak(`${plateToSpeech(lastNum, lastIs2)}了解、確認後流します`);
+      state.score += 15;
+      updateHUD();
+      showHint(`ナンバー <strong>${lastNum}（${plateRubi(lastNum, lastIs2)}）</strong> の対向車を視認後、こちらから流動開始！`, 5500);
+      setSuggestions([]);
+      break;
+
+    case 'continue':
+      log('A班(自分)', '引き続き流します', 'me');
+      speak('引き続き流します');
+      state.score += 10;
+      updateHUD();
+      // B班が「了解」と返答
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        showHint('✓ B班了解。<br>そのまま <strong>進行ボタン</strong>で車を流してください', 5000);
+        updateHUD();
+      }, 1200);
+      setSuggestions([]);
+      break;
+
+    case 'emergency':
+      log('A班(自分)', '緊急車両通過！両側停止！', 'me');
+      speak('緊急車両通過、両側停止', {rate:1.2});
+      state.emergencyAcknowledged = true;
+      setTimeout(()=>{
+        log('B班', '了解。両側停止します！', 'partner');
+        speak('了解、両側停止します', {rate:1.15});
+        state.partnerLane = 'stopped';
+        state.score += 40;
+        updateHUD();
+        showAlert('✓ 緊急車両対応OK！両側停止維持', 'success', 3000);
+      }, 1000);
+      setSuggestions([]);
+      break;
+  }
+}
+
+/* =========================================================================
+   BATON
+========================================================================= */
+function setBaton(signal){
+  state.batonSignal = signal;
+  batonFg.className = 'baton-fg signal-' + signal;
+  state.myLane = signal === 'stop' ? 'stopped' : 'flowing';
+  document.querySelectorAll('.baton-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.action === signal);
+  });
+  // Educational check
+  if(signal === 'go' && state.partnerLane === 'flowing'){
+    showAlert('⚠ B班流動中に進行！正面衝突リスク', 'danger', 3000);
+  }
+  if(signal === 'go' && state.waitingForPartnerLast){
+    triggerIncident('B班ラストナンバー未確認のまま進行');
+  }
+  // 進行合図開始 → 状態リセット＆サジェスト誘導
+  if(signal === 'go'){
+    state.myFlowStartedAt = Date.now();
+    state.myCarsPassedThisCycle = 0;
+    setTimeout(()=>{
+      if(state.batonSignal === 'go' && state.lastPassedCar){
+        showHint('🚗 1台通過。<br>もう2〜3台流したら<strong>停止ボタン → ラストナンバー宣言</strong>へ', 5000);
+      }
+    }, 8000);
+    // ★ 一定時間（12秒）経っても接近車が来なかったら「空車」を促す
+    setTimeout(()=>{
+      if(state.batonSignal === 'go'
+         && state.vehicles.filter(v=>v.direction==='approaching').length === 0
+         && state.approachBatchRemaining === 0
+         && !state.lastPassedCar){
+        showHint('🅿️ 接近車がありません。<br><strong>「ただいま空車です」</strong>を発信してください', 6000);
+        setSuggestions([{action:'empty', urgent:true}]);
+      }
+    }, 12000);
+  }
+  // 停止合図 → ラスト宣言をサジェスト
+  if(signal === 'stop' && state.lastPassedCar){
+    // ★ ミッションモードの判定
+    if(state.missionMode && state.missionActive){
+      evaluateMission();
+    }
+    // ★ 連続通行の途中で停止した場合の処理：未スポーンの後続車は出てこない
+    const remainingBatch = state.approachBatchRemaining;
+    const lpcIs2 = state.lastPassedCar.isTwoDigit || false;
+    if(remainingBatch > 0){
+      state.approachBatchRemaining = 0;
+      updateApproachQueueIndicator(0);
+      showHint(`🛑 連続通行を途中で停止！<br>後続${remainingBatch}台は次サイクルへ。<br>最後の車のナンバー <strong>${state.lastPassedCar.lastTwo}（${plateRubi(state.lastPassedCar.lastTwo, lpcIs2)}）</strong> をラスト宣言してください`, 7000);
+      setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true, isTwoDigit:lpcIs2}]);
+    } else {
+      setTimeout(()=>{
+        if(state.batonSignal === 'stop' && state.lastPassedCar && !state.waitingForPartnerLast){
+          const is2 = state.lastPassedCar.isTwoDigit || false;
+          showHint(`🛑 停止確認。<br>最後に通過した車のナンバー <strong>${state.lastPassedCar.lastTwo}（${plateRubi(state.lastPassedCar.lastTwo, is2)}）</strong> を「ラストナンバー」で宣言してください`, 7000);
+          setSuggestions([{action:'last-number', param:state.lastPassedCar.lastTwo, urgent:true, isTwoDigit:is2}]);
+        }
+      }, 1500);
+    }
+  }
+  updateHUD();
+}
+
+// ミッション判定
+function evaluateMission(){
+  const passed = state.missionCarsPassed;
+  const target = state.missionTarget;
+  const diff = Math.abs(passed - target);
+  state.missionActive = false;
+  updateMissionHUD();
+
+  let result, points, emoji, color;
+  if(diff === 0){
+    result = '🌟 PERFECT！';
+    points = 100;
+    emoji = '🌟';
+    color = 'success';
+    state.perfectCount++;
+  } else if(diff === 1){
+    result = '⭐ GOOD！';
+    points = 50;
+    emoji = '⭐';
+    color = 'success';
+    state.goodCount++;
+  } else if(diff === 2){
+    result = '👍 OK';
+    points = 20;
+    emoji = '👍';
+    color = 'success';
+  } else {
+    result = '❌ MISS';
+    points = 0;
+    emoji = '❌';
+    color = 'danger';
+    triggerIncident(`ミッション失敗（${diff}台ズレ）`);
+  }
+
+  state.score += points;
+  updateHUD();
+
+  // 結果表示（大きく目立つように）
+  showMissionResult(result, emoji, target, passed, points, color);
+  // 音声でも結果通知
+  if(diff === 0) speak('パーフェクト', {rate:1.2, pitch:1.2});
+  else if(diff === 1) speak('グッド', {rate:1.15});
+  else if(diff <= 2) speak('オーケー', {rate:1.1});
+  else speak('ミス', {rate:1.0, pitch:0.7});
+}
+
+// ミッション結果のド派手な表示
+function showMissionResult(result, emoji, target, actual, points, type){
+  let el = document.getElementById('mission-result');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'mission-result';
+    el.style.cssText = `
+      position:absolute; top:30%; left:50%; transform:translate(-50%,-50%);
+      z-index:80; padding:24px 32px;
+      border-radius:16px; text-align:center;
+      font-size:28px; font-weight:900; color:#fff;
+      box-shadow:0 12px 40px rgba(0,0,0,0.6);
+      display:none; line-height:1.3;
+      border:3px solid #fff;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  const bg = type === 'success'
+    ? 'linear-gradient(135deg,#34c759,#1b8a3e)'
+    : 'linear-gradient(135deg,#ff3b30,#8a1a14)';
+  el.style.background = bg;
+  el.innerHTML = `
+    <div style="font-size:42px;line-height:1">${emoji}</div>
+    <div style="margin:8px 0">${result}</div>
+    <div style="font-size:14px;color:#fff;opacity:0.9">
+      目標 ${target}台 / 実際 ${actual}台<br>
+      +${points} points
+    </div>
+  `;
+  el.style.display = 'block';
+  el.style.animation = 'alertPop 0.4s ease-out';
+  setTimeout(()=>{
+    if(el) el.style.display = 'none';
+  }, 4000);
+}
+
+document.querySelectorAll('.baton-btn').forEach(b=>{
+  b.addEventListener('click', ()=>setBaton(b.dataset.action));
+});
+
+/* =========================================================================
+   VEHICLES
+========================================================================= */
+const CAR_COLORS = ['#dc2626','#2563eb','#16a34a','#fbbf24','#fff','#0f172a','#9333ea','#94a3b8'];
+const STOP_LINE_T = 0.62;
+const PASS_T = 1.05;
+const DEPART_END_T = 0.45;
+
+function spawnVehicle(opts={}){
+  const isEmergency = opts.emergency || false;
+  const direction = opts.direction || 'approaching';
+  const forceLast = opts.forceLast || false;
+  const forceLastReserved = opts.forceLastReserved || false; // 予約済みナンバーで普通速度
+  const v = document.createElement('div');
+  v.className = 'vehicle dir-' + direction + (isEmergency?' emergency':'');
+
+  // ナンバー生成（既に画面上にある対向車と被らないように）
+  let plateNum, lastTwo;
+  let isTwoDigit = false; // 2桁ナンバーかどうか
+  if(forceLastReserved && opts.plateNum && opts.lastTwo){
+    // 予約済みナンバーを使用
+    plateNum = opts.plateNum;
+    lastTwo = opts.lastTwo;
+    isTwoDigit = opts.isTwoDigit || false;
+  } else {
+    const existingDepartLastTwos = state.vehicles
+      .filter(x=>x.direction==='departing')
+      .map(x=>x.lastTwo);
+    let attempts = 0;
+    do {
+      // ★ 20%確率で2桁ナンバー（10〜99）、80%で4桁ナンバー（1000〜9999）
+      if(Math.random() < 0.20){
+        // 2桁ナンバー：旧車・小型車・原付など
+        const num2 = Math.floor(Math.random()*90)+10; // 10〜99
+        plateNum = String(num2);
+        lastTwo = plateNum; // 2桁の場合はそのまま下2桁
+        isTwoDigit = true;
+      } else {
+        // 通常の4桁ナンバー
+        plateNum = String(Math.floor(Math.random()*9000)+1000);
+        lastTwo = plateNum.substr(2,2);
+        isTwoDigit = false;
+      }
+      attempts++;
+    } while(direction==='departing' && existingDepartLastTwos.includes(lastTwo) && attempts < 30);
+  }
+
+  // 座標系：t=1.0(カメラ目前、最大) → t=0.45(画面奥、消失) で対向車は走り去る
+  let startT;
+  if(direction === 'departing'){
+    if(forceLast){
+      // 旧仕様：警備員の目前(t=0.98)に待機させる
+      startT = 0.98;
+    } else if(forceLastReserved){
+      // 新仕様：宣言から約10秒経った後、普通の対向車と同じく目前から開始
+      startT = 0.98;
+    } else {
+      startT = 0.95;
+    }
+  } else {
+    startT = 0;
+  }
+  // 車の基本速度（少し遅め、ナンバー視認の余裕を確保）
+  const baseSpeed = 0.00025 + Math.random()*0.00006;
+
+  // ★ スピードタイプをランダム決定（速い/普通/遅い）
+  // 確率：速い 25% / 普通 50% / 遅い 25%
+  // 倍率：速い 1.30〜1.40 / 普通 0.95〜1.05 / 遅い 0.70〜0.80
+  let speedMultiplier = 1.0;
+  let speedType = 'normal';
+  if(direction === 'approaching' && !isEmergency && !forceLast && !forceLastReserved){
+    const speedRand = Math.random();
+    if(speedRand < 0.25){
+      speedMultiplier = 1.30 + Math.random() * 0.10; // 速い：1.30〜1.40
+      speedType = 'fast';
+    } else if(speedRand < 0.75){
+      speedMultiplier = 0.95 + Math.random() * 0.10; // 普通：0.95〜1.05
+      speedType = 'normal';
+    } else {
+      speedMultiplier = 0.70 + Math.random() * 0.10; // 遅い：0.70〜0.80
+      speedType = 'slow';
+    }
+  }
+
+  // forceLast(旧)：宣言まで待機 → 宣言で加速
+  // forceLastReserved(新)：最初から普通速度で通過
+  const finalSpeed = isEmergency ? baseSpeed * 1.4
+                   : forceLast ? 0.000003   // 待機用の超低速
+                   : forceLastReserved ? baseSpeed
+                   : baseSpeed * speedMultiplier;
+
+  const obj = {
+    el:v, t:startT, direction:direction,
+    speed: finalSpeed,
+    stopped:false,
+    color: isEmergency ? '#fff' : CAR_COLORS[Math.floor(Math.random()*CAR_COLORS.length)],
+    emergency: isEmergency,
+    plateNum, lastTwo,
+    plateEl:null, distEl:null,
+    forceLast: forceLast,
+    forceLastReserved: forceLastReserved,
+    speedType: speedType,
+    isTwoDigit: isTwoDigit
+  };
+
+  // スピードタイプをCSSクラスに反映（視覚的識別用）
+  if(speedType === 'fast') v.classList.add('speed-fast');
+  else if(speedType === 'slow') v.classList.add('speed-slow');
+
+  const body = document.createElement('div');
+  body.className = 'car-body';
+  body.style.background = obj.color;
+  body.innerHTML = '<div class="windshield"></div><div class="headlight left"></div><div class="headlight right"></div>';
+  v.appendChild(body);
+
+  if(isEmergency){
+    const siren = document.createElement('div');
+    siren.className = 'siren';
+    v.appendChild(siren);
+  }
+
+  // Plate（2桁ナンバーは・・-XX形式、4桁ナンバーはXX-XX形式）
+  const plate = document.createElement('div');
+  plate.className = 'plate';
+  if(isTwoDigit){
+    // 2桁ナンバー：実物のように「・・ XX」形式（左側ハイフン）
+    plate.innerHTML = `<span class="region">福井 500</span>・・-${plateNum.padStart(2,'0')}`;
+    plate.classList.add('plate-two-digit');
+  } else {
+    plate.innerHTML = `<span class="region">福井 500</span>${plateNum.substr(0,2)}-${plateNum.substr(2,2)}`;
+  }
+  v.appendChild(plate);
+  obj.plateEl = plate;
+
+  // Distance tag (only for approaching)
+  if(direction === 'approaching'){
+    const dt = document.createElement('div');
+    dt.className = 'distance-tag';
+    v.appendChild(dt);
+    obj.distEl = dt;
+  }
+
+  vehiclesLayer.appendChild(v);
+  state.vehicles.push(obj);
+  updateVehiclePosition(obj);
+  return obj;
+}
+
+function updateVehiclePosition(obj){
+  const t = obj.t;
+  const yPercent = 50 + t*55;
+  const scale = 0.3 + t*1.5;
+  const carWidth = 60, carHeight = 38;
+  let xOffset = obj.direction === 'departing' ? 44 - (1-t)*4 : 52 + (1-t)*4;
+
+  obj.el.style.bottom = `${100 - yPercent}%`;
+  obj.el.style.left = `${xOffset}%`;
+  obj.el.style.transform = `translateX(-50%) scale(${scale})`;
+  obj.el.style.zIndex = Math.floor(t*50)+10;
+
+  const body = obj.el.querySelector('.car-body');
+  body.style.width = carWidth + 'px';
+  body.style.height = carHeight + 'px';
+
+  // Distance display on car
+  if(obj.distEl){
+    // ▼ NEW: 停止線(STOP_LINE_T=0.62)で約10m、出現位置(t=0)で約80mに再キャリブレーション
+    //   旧式 (1-t)*200 では停止線で76m=遠すぎ。実際の停止位置感覚に合わせる
+    const dist = Math.max(0, Math.round((STOP_LINE_T - t) * (70/STOP_LINE_T) + 10));
+    obj.distEl.textContent = dist + 'm';
+    if(t >= STOP_LINE_T + 0.05) obj.distEl.style.display = 'none';
+  }
+  // ▼ NEW: ナンバープレートは「目の前を通過中の車」のみ表示
+  //   t > 0.78（停止線を越えてカメラ手前）の車だけ視認可能
+  //   キューで待機中の車（停止線以前）はナンバー非表示
+  if(obj.plateEl){
+    obj.plateEl.style.opacity = obj.t > 0.78 ? '1' : '0';
+  }
+}
+
+function updateVehicles(dt){
+  for(let i=state.vehicles.length-1; i>=0; i--){
+    const obj = state.vehicles[i];
+
+    if(obj.direction === 'departing'){
+      obj.t -= obj.speed * dt;
+      updateVehiclePosition(obj);
+      if(obj.t <= DEPART_END_T){
+        state.lastDepartedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo, isTwoDigit:obj.isTwoDigit};
+        if(state.waitingForPartnerLast && obj.lastTwo === state.waitingForPartnerLast){
+          showAlert('✓ ラストナンバー ' + obj.lastTwo + ' 通過確認！', 'success', 2500);
+
+          // ▼ NEW: 自側の車両状態でサジェスト文言を切り替え
+          //   - 停止線で待機中の車あり → 「通過確認、流します」（接近予告不要）
+          //   - 接近中の車のみ           → 「確認後、車両接近で流します」（新規到着車を予告）
+          //   - 車なし                   → 従来の「車両接近、流します」（フォールバック）
+          const stoppedCnt    = state.vehicles.filter(v=>v.direction==='approaching' && v.stopped).length;
+          const approachingCnt = state.vehicles.filter(v=>v.direction==='approaching' && !v.stopped).length;
+          let nextAction, hintHtml;
+          if(stoppedCnt > 0){
+            nextAction = 'pass-confirmed-release';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>停止線で車両待機中 → 「<strong>通過確認、流します</strong>」`;
+          } else if(approachingCnt > 0){
+            nextAction = 'approach-after-confirm';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>接近車あり → 「<strong>確認後、車両接近で流します</strong>」`;
+          } else {
+            nextAction = 'approach-release';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>「車両接近、流します」を発信してください`;
           }
-          return response;
+          showHint(hintHtml, 6000);
+          state.waitingForPartnerLast = null;
+          state.partnerLane = 'stopped';
+          updateHUD();
+          // サジェスト更新
+          setTimeout(()=>setSuggestions([{action: nextAction}]), 500);
+        }
+        obj.el.remove();
+        state.vehicles.splice(i,1);
+      }
+      continue;
+    }
+
+    if(!obj.stopped) obj.t += obj.speed * dt;
+
+    // ▼ NEW: 停止判定 - 既に停止中の同方向車があれば、その後ろにキューイング
+    //   1台目: STOP_LINE_T (=0.62) で停止
+    //   2台目: STOP_LINE_T - 0.07 = 0.55 で停止（前車の後ろ）
+    //   3台目: 0.48 で停止 ... と並んでいく
+    const QUEUE_GAP = 0.07;
+    let targetStopT = null;
+    if(!obj.emergency && state.batonSignal === 'stop'){
+      const stoppedAhead = state.vehicles.filter(v =>
+        v !== obj && v.direction === obj.direction && v.stopped && v.t > obj.t
+      );
+      if(stoppedAhead.length > 0){
+        const minT = Math.min(...stoppedAhead.map(v => v.t));
+        targetStopT = minT - QUEUE_GAP;
+      } else {
+        targetStopT = STOP_LINE_T;
+      }
+    }
+    const shouldStop = targetStopT !== null
+                     && obj.t >= targetStopT - 0.04 && obj.t < targetStopT;
+    if(shouldStop){
+      obj.t = targetStopT;
+      obj.stopped = true;
+    }
+    if(obj.stopped && (state.batonSignal === 'go' || state.batonSignal === 'slow')){
+      obj.stopped = false;
+    }
+    if(!obj.stopped && state.batonSignal === 'slow' && !obj.emergency){
+      obj.t -= obj.speed * dt * 0.5;
+    }
+
+    updateVehiclePosition(obj);
+
+    if(obj.t >= PASS_T){
+      if(state.batonSignal === 'stop' && !obj.emergency){
+        triggerIncident('停止合図中に車両通過');
+      } else if(state.partnerLane === 'flowing' && !obj.emergency){
+        triggerIncident('対向流動中に車両通過');
+      } else {
+        state.passed++;
+        state.score += obj.emergency ? 30 : 10;
+        if(!obj.emergency){
+          state.lastPassedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo, isTwoDigit:obj.isTwoDigit};
+          // ★ ミッションモードでのカウントアップ
+          if(state.missionMode && state.missionActive){
+            state.missionCarsPassed++;
+            updateMissionHUD();
+            // 目標を超過してしまった場合の警告
+            if(state.missionCarsPassed > state.missionTarget){
+              const over = state.missionCarsPassed - state.missionTarget;
+              if(over === 1){
+                showHint(`⚠ 目標を1台超過！<br>今すぐ <strong>停止ボタン</strong> を押せばまだGOOD判定！`, 3000);
+              }
+            } else if(state.missionCarsPassed === state.missionTarget){
+              showHint(`🎯 目標の <strong>${state.missionTarget}</strong>台目が通過！<br>今が停止のタイミング！`, 2500);
+            }
+          }
+        }
+      }
+      obj.el.remove();
+      state.vehicles.splice(i,1);
+
+      // 後続車インジケータを更新（残りスポーン予定 + 画面上の残り）
+      const stillApproaching = state.vehicles.filter(v=>v.direction==='approaching').length;
+      const totalRemaining = stillApproaching + state.approachBatchRemaining;
+      updateApproachQueueIndicator(totalRemaining);
+    }
+  }
+}
+
+function triggerIncident(reason){
+  state.incidents++;
+  state.score = Math.max(0, state.score - 20);
+  showAlert('⚠ ヒヤリハット: ' + reason, 'danger', 3500);
+  log('システム', reason, 'system');
+  updateHUD();
+}
+
+/* =========================================================================
+   HUD
+========================================================================= */
+function updateHUD(){
+  document.getElementById('score').textContent = state.score;
+  document.getElementById('passed').textContent = state.passed;
+  document.getElementById('incidents').textContent = state.incidents;
+  document.getElementById('my-status').textContent = state.myLane === 'flowing' ? '流動' : '停止';
+  document.getElementById('b-status').textContent = state.partnerLane === 'flowing' ? '流動' : '停止';
+  document.getElementById('my-led').className = 'chip-led ' + (state.myLane === 'flowing' ? 'green' : 'red');
+  document.getElementById('b-led').className = 'chip-led ' + (state.partnerLane === 'flowing' ? 'green' : 'red');
+
+  // ミッションスコアチップ表示制御
+  const missionChip = document.getElementById('mission-score-chip');
+  if(missionChip){
+    if(state.missionMode){
+      missionChip.style.display = '';
+      document.getElementById('perfect-count').textContent = state.perfectCount;
+      document.getElementById('good-count').textContent = state.goodCount;
+    } else {
+      missionChip.style.display = 'none';
+    }
+  }
+
+  // Front distance
+  const approaching = state.vehicles.filter(v=>v.direction === 'approaching');
+  if(approaching.length === 0){
+    distanceBig.firstChild.textContent = '---';
+    distanceBig.className = 'distance-big';
+  } else {
+    const nearest = approaching.reduce((a,b)=>a.t>b.t?a:b);
+    const dist = Math.max(0, Math.round((1-nearest.t)*200));
+    distanceBig.firstChild.textContent = dist + 'm';
+    distanceBig.className = 'distance-big';
+    if(dist <= 80) distanceBig.classList.add('danger');
+    else if(dist <= 150) distanceBig.classList.add('warning');
+  }
+}
+
+/* =========================================================================
+   PEDESTRIAN
+========================================================================= */
+function spawnPedestrian(){
+  const ped = document.createElement('div');
+  ped.className = 'pedestrian';
+  ped.innerHTML = '<div class="ped-head"></div><div class="ped-body"></div>';
+  ped.style.left = '5%';
+  stage.appendChild(ped);
+  state.pedestrian = {el:ped, crossing:false};
+
+  showHint('🚶 歩行者を発見！停止ボタンで車を止めて横断させてください', 5000);
+  log('システム', '左側に歩行者出現（横断希望）', 'system');
+  setSuggestions([{action:'last-number', param:state.lastPassedCar?.lastTwo || null}]);
+
+  const check = setInterval(()=>{
+    if(state.batonSignal === 'stop' && state.vehicles.every(v=>v.stopped||v.t<STOP_LINE_T-0.1||v.direction==='departing')){
+      if(!state.pedestrian) { clearInterval(check); return; }
+      if(!state.pedestrian.crossing){
+        state.pedestrian.crossing = true;
+        ped.style.left = '85%';
+        showAlert('✓ 歩行者の安全確保OK', 'success', 3000);
+        state.score += 25;
+        updateHUD();
+        setTimeout(()=>{
+          if(state.pedestrian){
+            state.pedestrian.el.remove();
+            state.pedestrian = null;
+          }
+          clearInterval(check);
+        }, 5500);
+      }
+    }
+  }, 200);
+
+  setTimeout(()=>{
+    if(state.pedestrian && !state.pedestrian.crossing){
+      triggerIncident('歩行者を長時間待たせた');
+      state.pedestrian.el.remove();
+      state.pedestrian = null;
+      clearInterval(check);
+    }
+  }, 11000);
+}
+
+/* =========================================================================
+   PARTNER CYCLE & ANNOUNCEMENTS
+========================================================================= */
+function startPartnerCycle(){
+  log('B班', '車両接近、流します', 'partner');
+  speak('車両接近、流します');
+  state.partnerLane = 'flowing';
+  state.departSpawnTimer = Date.now() - 1500;
+  state.partnerCycleStartedAt = Date.now();
+  state.partnerCarsSpawnedThisCycle = 0;
+  state.partnerLastAnnounced = false;
+  state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
+  state.waitingForPartnerLast = null;
+  updateHUD();
+  showHint('📻 B班から接近通報。<br>「了解」と応答してください', 5000);
+  setSuggestions([{action:'ryokai', urgent:true}]);
+}
+
+// ★ A班ラストナンバー宣言後、B班が次のサイクルに入る分岐
+// 70%確率で通常サイクル、30%確率で「空車」パターン
+function startPartnerNextCycle(){
+  const isEmpty = Math.random() < 0.3; // 30%で空車
+  if(isEmpty){
+    startPartnerEmptyCycle();
+  } else {
+    startPartnerCycle();
+  }
+}
+
+// 空車パターン：B班から「ただいま空車です」→ A班が「引き続き流します」で流動継続
+function startPartnerEmptyCycle(){
+  log('B班', 'ただいま空車です', 'partner');
+  speak('ただいま空車です');
+  state.partnerLane = 'stopped'; // 対向車が来ないので空車扱い
+  state.waitingForPartnerLast = null;
+  updateHUD();
+  showHint(`📻 B班から「空車」連絡！<br>こちらは <strong>「引き続き流します」</strong>で継続流動`, 6000);
+  setSuggestions([{action:'continue', urgent:true}]);
+}
+
+function announcePartnerLastNumber(){
+  // ラスト車両を確実に生成（指定ナンバーで）
+  const lastCar = spawnVehicle({direction:'departing', forceLast:true});
+  const lastTwo = lastCar.lastTwo;
+  announcePartnerLastNumberFor(lastTwo, lastCar.isTwoDigit);
+  state.departSpawnTimer = Date.now() + 9999999;
+}
+
+// ラスト車宣言を行う（音声＆ログ）。実際の車はこの後10秒後に普通速度で出現
+function announcePartnerLastNumberFor(lastTwo, isTwoDigit){
+  isTwoDigit = isTwoDigit || false;
+  state.waitingForPartnerLast = lastTwo;
+  state.waitingForPartnerLastIsTwoDigit = isTwoDigit;
+  log('B班', `ラストナンバー ${lastTwo}（${plateRubi(lastTwo, isTwoDigit)}） です`, 'partner');
+  speak(`ラストナンバー${plateToSpeech(lastTwo, isTwoDigit)}です`);
+  const digitsHint = isTwoDigit ? '【2桁ナンバー！普通読み】' : '【4桁ナンバーの下2桁】';
+  showHint(`📻 B班ラスト <strong>${lastTwo}（${plateRubi(lastTwo, isTwoDigit)}）</strong> ${digitsHint}<br>まもなくその車が画面に来ます。視認後に「確認後流します」`, 10000);
+  setSuggestions([{action:'confirm-last', param:lastTwo, urgent:true, isTwoDigit:isTwoDigit}]);
+}
+
+function announceFakeLastNumber(){
+  // B班は架空のラストナンバーを宣言するが、実際に流れてくるのは別ナンバーの車
+  // → 訓練生は「番号が違う！」と気づく必要がある
+
+  // 実際に流れてくる車を生成（"本当のラスト車両"）
+  const realLastCar = spawnVehicle({direction:'departing', forceLast:true});
+
+  // B班の偽ナンバーは、その実車両とは違う番号にする
+  let fakeNum;
+  let attempts = 0;
+  do {
+    fakeNum = String(Math.floor(Math.random()*90)+10).padStart(2,'0');
+    attempts++;
+  } while(fakeNum === realLastCar.lastTwo && attempts < 20);
+
+  // 偽ナンバーの桁数は実車両に合わせる（読み方の混乱を避ける）
+  const fakeIsTwoDigit = realLastCar.isTwoDigit || false;
+
+  state.fakeLastNum = fakeNum;
+  state.waitingForPartnerLast = fakeNum;
+  state.waitingForPartnerLastIsTwoDigit = fakeIsTwoDigit;
+  log('B班', `ラストナンバー ${fakeNum}（${plateRubi(fakeNum, fakeIsTwoDigit)}） です`, 'partner');
+  speak(`ラストナンバー${plateToSpeech(fakeNum, fakeIsTwoDigit)}です`);
+  showHint(`⚠ B班「ラスト <strong>${fakeNum}（${plateRubi(fakeNum, fakeIsTwoDigit)}）</strong>」<br>実際の通過車のナンバーをよく見て！違ったら流してはダメ`, 8000);
+  setSuggestions([{action:'confirm-last', param:fakeNum, isTwoDigit:fakeIsTwoDigit}]);
+
+  // 新規対向車のスポーン停止
+  state.departSpawnTimer = Date.now() + 9999999;
+}
+
+function triggerEmergency(){
+  state.emergencyTriggered = true;
+  showAlert('🚨 サイレン音検知！緊急車両接近', 'danger', 4000);
+  showHint('🚨 緊急車両！停止維持して、無線で両側停止を伝達', 6000);
+  setSuggestions([{action:'emergency', urgent:true}]);
+  setTimeout(()=>spawnVehicle({emergency:true}), 2500);
+  setTimeout(()=>{
+    if(!state.emergencyAcknowledged) triggerIncident('緊急車両への無線伝達遅れ');
+  }, 6000);
+}
+
+/* =========================================================================
+   接近車のバッチ（群れ）スポーン
+   - バッチ間：8〜12秒のインターバル
+   - バッチサイズ：1〜4台（1台=単独車、2台以上=連続車）
+   - バッチ内間隔：1.8秒（連続して接近する様子を表現）
+========================================================================= */
+function spawnApproachingBatch(){
+  const now = Date.now();
+  const approachingCount = state.vehicles.filter(v=>v.direction==='approaching').length;
+
+  // バッチ残数がある間：1.2〜2.5秒の動的インターバルで連続スポーン
+  if(state.approachBatchRemaining > 0){
+    if(now - state.approachLastSpawnAt > state.approachBatchInterval){
+      spawnVehicle({direction:'approaching'});
+      state.approachBatchRemaining--;
+      state.approachLastSpawnAt = now;
+      // 次の車のインターバルもランダム化（自然な車列感）
+      state.approachBatchInterval = 1200 + Math.random()*1300;
+      if(state.approachBatchRemaining > 0){
+        updateApproachQueueIndicator(state.approachBatchRemaining);
+      } else {
+        updateApproachQueueIndicator(0);
+      }
+    }
+    return;
+  }
+
+  // バッチ間のクールダウン中
+  if(approachingCount > 0) return;
+
+  // ★ 進行合図中で、かつまだ進行サイクルで車を流していないなら
+  //   20%の確率で「空車状態」を意図的に作る（インターバル25秒）
+  //   それ以外は通常の8〜12秒
+  let interval = 8000 + Math.random()*4000;
+  if(state.batonSignal === 'go' && state.myCarsPassedThisCycle === 0){
+    if(state.emptyChanceRolled === undefined){
+      // 進行合図開始後、1回だけ「空車にするか」判定
+      state.emptyChanceRolled = Math.random() < 0.25; // 25%確率
+    }
+    if(state.emptyChanceRolled){
+      interval = 28000; // 28秒間隔 → 空車プロンプトが出る
+    }
+  }
+
+  if(now - state.spawnTimer < interval) return;
+
+  // ★ 新バッチ開始
+  // バッチサイズ：2〜10台のランダム
+  // 分布：2〜3台（軽い列・40%）、4〜6台（中規模・40%）、7〜10台（大規模・20%）
+  const rand = Math.random();
+  let batchSize;
+  if(rand < 0.4) batchSize = 2 + Math.floor(Math.random()*2);       // 2〜3台
+  else if(rand < 0.8) batchSize = 4 + Math.floor(Math.random()*3);  // 4〜6台
+  else batchSize = 7 + Math.floor(Math.random()*4);                  // 7〜10台
+
+  spawnVehicle({direction:'approaching'});
+  state.approachBatchRemaining = batchSize - 1;
+  // 車間隔を短く（1.2〜2.5秒）：現場リアルな連続性、カウント集中力を要する
+  state.approachBatchInterval = 1200 + Math.random()*1300;
+  state.approachLastSpawnAt = now;
+  state.spawnTimer = now;
+  state.emptyChanceRolled = undefined; // リセット
+
+  // ★ ミッションモード：バッチ開始時に目標台数を設定
+  if(state.missionMode){
+    state.missionBatchSize = batchSize;
+    // 目標：バッチサイズの30%〜80%の位置で停止させる（少なくとも2台、最大はサイズ-1）
+    const minTarget = Math.max(2, Math.floor(batchSize * 0.3));
+    const maxTarget = Math.max(minTarget, Math.min(batchSize - 1, Math.floor(batchSize * 0.8)));
+    state.missionTarget = minTarget + Math.floor(Math.random() * (maxTarget - minTarget + 1));
+    state.missionCarsPassed = 0;
+    state.missionActive = true;
+    showMissionAnnouncement(state.missionTarget, batchSize);
+  }
+
+  if(batchSize > 1){
+    updateApproachQueueIndicator(batchSize - 1);
+  }
+}
+
+// ミッション開始通知
+function showMissionAnnouncement(target, total){
+  const banner = `🎯 ミッション！ 全${total}台中 ${target}台目で停止合図！`;
+  showAlert(banner, 'mission', 5000);
+  speak(`ミッション。${target}台目で停止してください`, {rate:1.1});
+  updateMissionHUD();
+}
+
+// ミッションHUD更新
+function updateMissionHUD(){
+  let el = document.getElementById('mission-hud');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'mission-hud';
+    el.style.cssText = `
+      position:absolute; top:74px; right:8px; z-index:23;
+      background:linear-gradient(135deg,#FFD60A,#FF8500);
+      color:#000; padding:6px 14px; border-radius:8px;
+      font-size:11px; font-weight:900; letter-spacing:0.05em;
+      border:2px solid #fff;
+      box-shadow:0 2px 12px rgba(255,214,10,0.6);
+      display:none; text-align:center; line-height:1.3;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  if(state.missionMode && state.missionActive){
+    el.innerHTML = `🎯 目標 <strong style="font-size:18px">${state.missionTarget}</strong>台目<br>現在 ${state.missionCarsPassed}/${state.missionBatchSize}`;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// 後続車のインジケータ表示（HUD上に「後続◯台」と出す）
+function updateApproachQueueIndicator(remaining){
+  let el = document.getElementById('queue-indicator');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'queue-indicator';
+    el.style.cssText = `
+      position:absolute; top:74px; left:8px; z-index:22;
+      padding:6px 12px; border-radius:6px;
+      font-size:11px; font-weight:900; letter-spacing:0.05em;
+      border:2px solid #fff;
+      box-shadow:0 2px 8px rgba(0,0,0,0.4);
+      display:none; color:#fff;
+    `;
+    document.getElementById('stage').appendChild(el);
+  }
+  if(remaining > 0){
+    // 台数に応じた色変化：1〜2台=オレンジ、3〜5台=赤系、6〜10台=濃い赤（渋滞警告）
+    let bg = 'rgba(255, 133, 0, 0.95)';   // オレンジ
+    let icon = '🚗';
+    if(remaining >= 6){
+      bg = 'rgba(192, 0, 0, 0.95)';      // 濃赤
+      icon = '🚗🚗🚗';
+    } else if(remaining >= 3){
+      bg = 'rgba(255, 80, 0, 0.95)';     // 赤橙
+      icon = '🚗🚗';
+    }
+    el.style.background = bg;
+    el.innerHTML = `${icon} 後続あり：あと <strong style="font-size:14px">${remaining}</strong>台`;
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+const scenarios = {
+  basic: {
+    init(){
+      showHint('B班が流動中。<br>対向車を観察 → B班ラスト宣言を待ちましょう', 5500);
+      state.partnerLane = 'flowing';
+      state.partnerCycleStartedAt = Date.now();
+      state.partnerCarsSpawnedThisCycle = 0;
+      state.partnerLastAnnounced = false;
+      state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2); // 2 or 3 台
+      state.missionMode = false;
+      setSuggestions([]);
+    },
+    tick(){
+      spawnApproachingBatch();
+    }
+  },
+  mission: {
+    init(){
+      showHint('🎯 <strong>ミッションモード</strong><br>「〇台目で停止」の指示が出ます。<br>狙ったタイミングで停止合図を出してください！', 7000);
+      state.partnerLane = 'flowing';
+      state.partnerCycleStartedAt = Date.now();
+      state.partnerCarsSpawnedThisCycle = 0;
+      state.partnerLastAnnounced = false;
+      state.partnerCycleTargetCount = 2 + Math.floor(Math.random()*2);
+      state.missionMode = true;
+      state.perfectCount = 0;
+      state.goodCount = 0;
+      setSuggestions([]);
+    },
+    tick(){
+      spawnApproachingBatch();
+    }
+  },
+  emergency: {
+    init(){
+      showHint('通常運用中。緊急車両のサイレンに注意！', 4500);
+      state.partnerLane = 'flowing';
+      state.spawnTimer = Date.now();
+      setTimeout(()=>{ if(state.scenario==='emergency' && state.running) triggerEmergency(); }, 8000);
+    },
+    tick(){
+      if(!state.emergencyTriggered) spawnApproachingBatch();
+    }
+  },
+  pedestrian: {
+    init(){
+      showHint('まもなく歩行者が出現します。停止合図で対応を', 4500);
+      state.partnerLane = 'flowing';
+      setTimeout(()=>{ if(state.scenario==='pedestrian' && state.running) spawnPedestrian(); }, 6500);
+    },
+    tick(){
+      spawnApproachingBatch();
+    }
+  },
+  miscom: {
+    init(){
+      showHint('B班から不正確な無線が来ます。視認で確認！', 5000);
+      state.partnerLane = 'flowing';
+      state.spawnTimer = Date.now();
+      setTimeout(()=>{ if(state.scenario==='miscom' && state.running) announceFakeLastNumber(); }, 8500);
+    },
+    tick(){
+      spawnApproachingBatch();
+    }
+  }
+};
+
+function startScenario(name){
+  stopScenario();
+  state.scenario = name;
+  state.running = true;
+  Object.assign(state, {
+    score:0, passed:0, incidents:0,
+    emergencyTriggered:false, emergencyAcknowledged:false,
+    lastPassedCar:null, lastDepartedCar:null,
+    waitingForPartnerLast:null, waitingForPartnerLastIsTwoDigit:false, myAnnouncedLast:null,
+    spawnTimer:Date.now() - 5000,
+    departSpawnTimer:Date.now()-2000,
+    myLane:'stopped', partnerLane:'flowing', fakeLastNum:null,
+    approachBatchRemaining:0, approachLastSpawnAt:0,
+    partnerCarsSpawnedThisCycle:0, partnerLastAnnounced:false,
+    // ミッション関連
+    missionMode:false, missionActive:false,
+    missionTarget:0, missionBatchSize:0, missionCarsPassed:0,
+    perfectCount:0, goodCount:0
+  });
+  setBaton('stop');
+  logMini.innerHTML = '';
+  updateApproachQueueIndicator(0);
+  updateMissionHUD();
+  log('システム', scenarios[name] ? '訓練開始' : name, 'system');
+  scenarios[name].init();
+  updateHUD();
+  gameLoop();
+}
+
+function stopScenario(){
+  state.running = false;
+  state.vehicles.forEach(v=>v.el.remove());
+  state.vehicles = [];
+  if(state.pedestrian){ state.pedestrian.el.remove(); state.pedestrian = null; }
+}
+
+/* =========================================================================
+   GAME LOOP
+========================================================================= */
+let lastTime = 0;
+function gameLoop(ts){
+  if(!state.running) return;
+  if(!lastTime) lastTime = ts || Date.now();
+  const t = ts || Date.now();
+  const dt = Math.min(t - lastTime, 100);
+  lastTime = t;
+
+  if(scenarios[state.scenario]) scenarios[state.scenario].tick();
+
+  // ▼ B班の対向車スポーン処理（カウンタ付き）
+  if(state.partnerLane === 'flowing' && !state.emergencyTriggered && !state.partnerLastAnnounced){
+    if(Date.now() - state.departSpawnTimer > 7000 + Math.random()*3000){
+      const targetCount = state.partnerCycleTargetCount || 3;
+      const reachedTarget = state.partnerCarsSpawnedThisCycle >= targetCount - 1;
+
+      if(reachedTarget){
+        // ★ 次にスポーンするはずの車がラスト車
+        // まず音声宣言だけ行い、約10秒後に普通速度で実際の車を出現させる
+        state.partnerLastAnnounced = true;
+        // ラスト用のランダムナンバー生成（既存対向車と被らないように）
+        // 20%確率で2桁ナンバー
+        const existingDeparting = state.vehicles.filter(v=>v.direction==='departing').map(v=>v.lastTwo);
+        let plateNum, lastTwo, isTwoDigit;
+        do {
+          if(Math.random() < 0.20){
+            // 2桁ナンバー
+            const num2 = Math.floor(Math.random()*90)+10;
+            plateNum = String(num2);
+            lastTwo = plateNum;
+            isTwoDigit = true;
+          } else {
+            // 4桁ナンバー
+            plateNum = String(Math.floor(Math.random()*9000)+1000);
+            lastTwo = plateNum.substr(2,2);
+            isTwoDigit = false;
+          }
+        } while(existingDeparting.includes(lastTwo));
+        // 宣言（音声＆ログ）を先に行う
+        announcePartnerLastNumberFor(lastTwo, isTwoDigit);
+        // 約10秒後に実際のラスト車を画面奥から普通速度で出現させる
+        const reservedLastTwo = lastTwo;
+        const reservedPlateNum = plateNum;
+        const reservedIsTwoDigit = isTwoDigit;
+        setTimeout(()=>{
+          if(state.running && state.waitingForPartnerLast === reservedLastTwo){
+            spawnVehicle({direction:'departing', forceLastReserved:true,
+                          plateNum:reservedPlateNum, lastTwo:reservedLastTwo,
+                          isTwoDigit:reservedIsTwoDigit});
+          }
+        }, 10000);
+        // 新規対向車のスポーン停止
+        state.departSpawnTimer = Date.now() + 9999999;
+      } else {
+        // 通常の対向車スポーン
+        spawnVehicle({direction:'departing'});
+        state.partnerCarsSpawnedThisCycle++;
+        state.departSpawnTimer = Date.now();
+      }
+    }
+  }
+
+  updateVehicles(dt);
+  updateHUD();
+  requestAnimationFrame(gameLoop);
+}
+
+/* =========================================================================
+   INIT
+========================================================================= */
+document.getElementById('scenario-sel').addEventListener('change',(e)=>{
+  startScenario(e.target.value);
+});
+
+document.getElementById('start-btn').addEventListener('click',()=>{
+  document.getElementById('tutorial').classList.add('hidden');
+  // ユーザーインタラクション後にTTSを起動可能化
+  if('speechSynthesis' in window){
+    const dummy = new SpeechSynthesisUtterance('');
+    dummy.volume = 0;
+    speechSynthesis.speak(dummy);
+  }
+  startScenario('basic');
+});
+
+// 初期サジェスト
+setSuggestions([]);
+updateHUD();
+</script>
+
+<!-- ===== Service Worker Registration ===== -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => {
+        console.log('SW registered:', reg.scope);
+        // 更新チェック（30秒ごと）
+        setInterval(() => reg.update(), 30000);
+        // 新版検知時：自動リロード
+        reg.addEventListener('updatefound', () => {
+          const newSW = reg.installing;
+          newSW.addEventListener('statechange', () => {
+            if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+              // 控えめな通知（自動リロードはせず、ユーザーに任せる）
+              console.log('🆕 新しいバージョンが利用可能です。リロードしてください。');
+            }
+          });
         });
       })
-    );
-  }
+      .catch(err => console.warn('SW registration failed:', err));
+  });
+}
+
+// PWAインストールプロンプト（Android Chrome）
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // ボタンを表示するなどの追加処理ができる
+  console.log('💡 PWAインストール可能（ブラウザメニューから「ホーム画面に追加」）');
 });
 
-// メッセージ受信（強制更新時など）
-self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
+window.addEventListener('appinstalled', () => {
+  console.log('✅ PWAがインストールされました');
+  deferredPrompt = null;
 });
+</script>
+</body>
+</html>

@@ -980,6 +980,10 @@ function showHint(text, dur=4500){
 ========================================================================= */
 const ACTIONS = {
   'approach-release': { icon:'📢', label:'「車両接近、流します」', say:'車両接近、流します' },
+  // ▼ NEW: 自側に車両が停止待機中（両側待機状態）→ 接近予告は不要、通過確認のみ
+  'pass-confirmed-release': { icon:'✅', label:'「通過確認、流します」', say:'通過確認、流します' },
+  // ▼ NEW: 自側は空車状態だったが、流動中に新たに車両が接近してきた場合
+  'approach-after-confirm': { icon:'📢', label:'「確認後、車両接近で流します」', say:'確認後、車両接近で流します' },
   'last-number':      { icon:'🔢',
                         label:(num, isTwoDigit)=>`「ラストナンバー ${num}（${plateRubi(num, isTwoDigit)}） です」`,
                         say:(num, isTwoDigit)=>`ラストナンバー${plateToSpeech(num, isTwoDigit)}です` },
@@ -1160,6 +1164,12 @@ function processVoiceCommand(text){
     executeAction('dozo');
   } else if(/引き続き|ひきつづき/.test(t)){
     executeAction('continue');
+  } else if(/通過確認/.test(t)){
+    // ▼ NEW: 「通過確認、流します」（両側待機パターン）
+    executeAction('pass-confirmed-release');
+  } else if(/確認後/.test(t) && /接近|車両|せっきん|しゃりょう/.test(t)){
+    // ▼ NEW: 「確認後、車両接近で流します」（自側空車→車到着パターン）
+    executeAction('approach-after-confirm');
   } else if(/接近|せっきん|ながします|流します/.test(t)){
     executeAction('approach-release');
   } else if(/空車|くうしゃ|ありません|なし/.test(t)){
@@ -1216,6 +1226,34 @@ function executeAction(actionType, param, isTwoDigit){
       log('A班(自分)', '車両接近、流します', 'me');
       speak('車両接近、流します', {rate:1.05});
       // B班応答
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        state.score += 5;
+        updateHUD();
+        showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    // ▼ NEW: 両側待機状態でラスト通過後 → 接近予告不要
+    case 'pass-confirmed-release':
+      log('A班(自分)', '通過確認、流します', 'me');
+      speak('通過確認、流します', {rate:1.05});
+      setTimeout(()=>{
+        log('B班', '了解', 'partner');
+        speak('了解');
+        state.score += 5;
+        updateHUD();
+        showHint('B班OK！<strong>進行ボタン</strong>で車を流してください', 4000);
+      }, 1400);
+      setSuggestions([]);
+      break;
+
+    // ▼ NEW: 自側空車から接近車到来パターン
+    case 'approach-after-confirm':
+      log('A班(自分)', '確認後、車両接近で流します', 'me');
+      speak('確認後、車両接近で流します', {rate:1.05});
       setTimeout(()=>{
         log('B班', '了解', 'partner');
         speak('了解');
@@ -1668,12 +1706,30 @@ function updateVehicles(dt){
         state.lastDepartedCar = {plateNum:obj.plateNum, lastTwo:obj.lastTwo, isTwoDigit:obj.isTwoDigit};
         if(state.waitingForPartnerLast && obj.lastTwo === state.waitingForPartnerLast){
           showAlert('✓ ラストナンバー ' + obj.lastTwo + ' 通過確認！', 'success', 2500);
-          showHint(`B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>「車両接近、流します」を発信してください`, 6000);
+
+          // ▼ NEW: 自側の車両状態でサジェスト文言を切り替え
+          //   - 停止線で待機中の車あり → 「通過確認、流します」（接近予告不要）
+          //   - 接近中の車のみ           → 「確認後、車両接近で流します」（新規到着車を予告）
+          //   - 車なし                   → 従来の「車両接近、流します」（フォールバック）
+          const stoppedCnt    = state.vehicles.filter(v=>v.direction==='approaching' && v.stopped).length;
+          const approachingCnt = state.vehicles.filter(v=>v.direction==='approaching' && !v.stopped).length;
+          let nextAction, hintHtml;
+          if(stoppedCnt > 0){
+            nextAction = 'pass-confirmed-release';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>停止線で車両待機中 → 「<strong>通過確認、流します</strong>」`;
+          } else if(approachingCnt > 0){
+            nextAction = 'approach-after-confirm';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>接近車あり → 「<strong>確認後、車両接近で流します</strong>」`;
+          } else {
+            nextAction = 'approach-release';
+            hintHtml = `B班ラスト <strong>${obj.lastTwo}</strong> 通過確認！<br>「車両接近、流します」を発信してください`;
+          }
+          showHint(hintHtml, 6000);
           state.waitingForPartnerLast = null;
           state.partnerLane = 'stopped';
           updateHUD();
           // サジェスト更新
-          setTimeout(()=>setSuggestions([{action:'approach-release'}]), 500);
+          setTimeout(()=>setSuggestions([{action: nextAction}]), 500);
         }
         obj.el.remove();
         state.vehicles.splice(i,1);

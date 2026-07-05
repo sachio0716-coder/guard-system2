@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1F3864">
+<title>AI鑑定処 | 月夜の間</title>
+<style>
+  :root{
+    --navy:#1F3864;
+    --navy-deep:#101E38;
+    --orange:#E8730C;
+    --gold:#C9A54E;
+    --washi:#F7F3E8;
+    --ink:#2B2B2B;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    font-family:"Meiryo","Hiragino Kaku Gothic ProN",sans-serif;
+    background:
+      radial-gradient(circle at 80% 12%, rgba(201,165,78,.22), transparent 34%),
+      radial-gradient(circle at 15% 85%, rgba(232,115,12,.12), transparent 40%),
+      linear-gradient(180deg,var(--navy) 0%,var(--navy-deep) 100%);
+    color:#fff;min-height:100dvh;
+    display:flex;flex-direction:column;align-items:center;
+  }
+  .mincho{font-family:"Yu Mincho","Hiragino Mincho ProN","MS Mincho",serif;}
+
+  header{width:100%;max-width:520px;text-align:center;padding:22px 20px 8px;}
+  .brand{font-size:11px;letter-spacing:.4em;text-indent:.4em;color:var(--gold);}
+  h1{font-size:30px;letter-spacing:.22em;text-indent:.22em;margin-top:6px;font-weight:600;}
+  .subtitle{margin-top:8px;font-size:12px;color:rgba(255,255,255,.7);letter-spacing:.1em;line-height:1.7;}
+  .divider{width:56px;height:2px;background:var(--gold);margin:14px auto 0;}
+
+  main{width:100%;max-width:520px;flex:1;padding:12px 20px 30px;}
+
+  .card{
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(201,165,78,.35);
+    border-radius:12px;padding:20px 18px;margin-top:14px;
+    backdrop-filter:blur(4px);
+  }
+  label{display:block;font-size:12px;letter-spacing:.1em;color:var(--gold);margin:14px 0 6px;font-weight:700;}
+  label:first-child{margin-top:0;}
+  input[type=text],input[type=date],input[type=password],textarea,select{
+    width:100%;border:1px solid rgba(255,255,255,.25);border-radius:8px;
+    background:rgba(0,0,0,.25);color:#fff;
+    padding:12px;font-size:16px;font-family:inherit;
+  }
+  textarea{min-height:84px;resize:vertical;line-height:1.7;}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--orange);border-color:transparent;}
+  select{appearance:none;-webkit-appearance:none;}
+  ::placeholder{color:rgba(255,255,255,.4);}
+
+  .cat-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .cat{
+    border:1px solid rgba(255,255,255,.3);border-radius:20px;
+    padding:8px 14px;font-size:13px;cursor:pointer;user-select:none;
+    color:rgba(255,255,255,.85);background:transparent;font-family:inherit;
+  }
+  .cat.sel{background:var(--orange);border-color:var(--orange);color:#fff;font-weight:700;}
+
+  .btn-main{
+    width:100%;margin-top:20px;border:none;border-radius:10px;
+    padding:16px;font-size:16px;font-weight:700;letter-spacing:.15em;
+    background:linear-gradient(90deg,var(--orange),#F08A30);
+    color:#fff;cursor:pointer;font-family:inherit;
+    box-shadow:0 6px 18px rgba(232,115,12,.35);
+  }
+  .btn-main:active{transform:scale(.98);}
+  .btn-main:disabled{opacity:.5;box-shadow:none;}
+  .btn-sub{
+    width:100%;margin-top:10px;border:1px solid rgba(255,255,255,.3);border-radius:10px;
+    padding:12px;font-size:13px;background:transparent;color:rgba(255,255,255,.85);
+    cursor:pointer;font-family:inherit;letter-spacing:.05em;
+  }
+
+  /* 鑑定中 */
+  #loadingStage{display:none;text-align:center;padding:60px 0 40px;}
+  .crystal{
+    width:74px;height:74px;margin:0 auto;border-radius:50%;
+    background:radial-gradient(circle at 32% 28%, #fff, var(--gold) 35%, var(--orange) 75%, #7a3c05);
+    box-shadow:0 0 34px rgba(201,165,78,.7);
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{transform:scale(1);box-shadow:0 0 24px rgba(201,165,78,.5);}
+    50%{transform:scale(1.08);box-shadow:0 0 46px rgba(232,115,12,.85);}
+  }
+  @media (prefers-reduced-motion: reduce){ .crystal{animation:none;} }
+  .loading-text{margin-top:22px;font-size:14px;letter-spacing:.15em;color:var(--gold);}
+
+  /* 結果 */
+  #resultStage{display:none;}
+  .result-card{
+    background:var(--washi);color:var(--ink);border-radius:12px;
+    padding:26px 22px;margin-top:14px;
+    box-shadow:0 14px 34px rgba(0,0,0,.45);
+    position:relative;
+  }
+  .result-card::before{
+    content:"";position:absolute;top:0;left:0;right:0;height:6px;
+    background:linear-gradient(90deg,var(--gold),var(--orange));border-radius:12px 12px 0 0;
+  }
+  .result-title{
+    text-align:center;font-size:13px;letter-spacing:.3em;text-indent:.3em;
+    color:var(--orange);font-weight:700;margin-bottom:14px;
+  }
+  #resultBody{font-size:15px;line-height:2;white-space:pre-wrap;}
+  #resultBody h3{
+    font-family:"Yu Mincho","Hiragino Mincho ProN",serif;
+    color:var(--navy);font-size:17px;margin:18px 0 4px;
+    border-bottom:1px solid rgba(31,56,100,.2);padding-bottom:4px;letter-spacing:.08em;
+  }
+  .disclaimer{
+    margin-top:14px;font-size:11px;color:rgba(255,255,255,.55);
+    text-align:center;line-height:1.8;
+  }
+  .error-box{
+    display:none;margin-top:14px;padding:14px;border-radius:8px;
+    background:rgba(211,58,44,.18);border:1px solid rgba(211,58,44,.6);
+    font-size:13px;line-height:1.8;
+  }
+
+  /* 設定 */
+  #settingsStage{display:none;}
+  .note{font-size:12px;color:rgba(255,255,255,.65);line-height:1.9;margin-top:10px;}
+  .gear{
+    position:absolute;top:18px;right:16px;background:none;border:none;
+    color:rgba(255,255,255,.55);font-size:20px;cursor:pointer;padding:6px;
+  }
+  header{position:relative;}
+  footer{width:100%;max-width:520px;text-align:center;padding:6px 20px 24px;
+    font-size:11px;color:rgba(255,255,255,.4);letter-spacing:.08em;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">AI KANTEI</div>
+  <h1 class="mincho">月夜の間</h1>
+  <div class="subtitle">生年月日とお悩みから、AIが本格鑑定風に読み解きます</div>
+  <div class="divider"></div>
+  <button class="gear" id="gearBtn" aria-label="設定">⚙</button>
+</header>
+
+<main>
+  <!-- ===== 設定(APIキー) ===== -->
+  <div id="settingsStage">
+    <div class="card">
+      <label>Claude APIキー</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." autocomplete="off">
+      <p class="note">
+        キーはこの端末のブラウザ内(localStorage)にのみ保存され、ファイルやサーバーには一切書き込まれません。<br>
+        APIキーは Anthropic Console で発行したものを使用してください。利用ごとにAPI料金が発生します(1回の鑑定で数円程度)。
+      </p>
+      <button class="btn-main" id="saveKeyBtn">保存して鑑定所へ</button>
+      <button class="btn-sub" id="clearKeyBtn">保存済みキーを削除</button>
+    </div>
+  </div>
+
+  <!-- ===== 入力 ===== -->
+  <div id="formStage">
+    <div class="card">
+      <label>お名前(呼び名でOK)</label>
+      <input type="text" id="nameInput" placeholder="例:さちお" maxlength="20">
+
+      <label>生年月日</label>
+      <input type="date" id="birthInput">
+
+      <label>鑑定したいこと</label>
+      <div class="cat-row" id="catRow">
+        <button class="cat sel" data-cat="総合運">総合運</button>
+        <button class="cat" data-cat="仕事運">仕事運</button>
+        <button class="cat" data-cat="人間関係">人間関係</button>
+        <button class="cat" data-cat="金運">金運</button>
+        <button class="cat" data-cat="健康運">健康運</button>
+      </div>
+
+      <label>お悩み・聞きたいこと(任意)</label>
+      <textarea id="worryInput" placeholder="例:新しいことを始めるか迷っています"></textarea>
+
+      <button class="btn-main" id="kanteiBtn">鑑 定 す る</button>
+      <div class="error-box" id="errorBox"></div>
+    </div>
+    <p class="disclaimer">本鑑定はAIによるエンターテインメントです。<br>重要な決定はご自身の判断と、必要に応じて専門家への相談をおすすめします。</p>
+  </div>
+
+  <!-- ===== 鑑定中 ===== -->
+  <div id="loadingStage">
+    <div class="crystal"></div>
+    <div class="loading-text mincho" id="loadingText">星の巡りを読んでいます…</div>
+  </div>
+
+  <!-- ===== 結果 ===== -->
+  <div id="resultStage">
+    <div class="result-card">
+      <div class="result-title">鑑 定 結 果</div>
+      <div id="resultBody"></div>
+    </div>
+    <button class="btn-main" id="copyResultBtn" style="margin-top:16px;">結果をコピー</button>
+    <button class="btn-sub" id="againBtn">もう一度鑑定する</button>
+    <p class="disclaimer">本鑑定はAIによるエンターテインメントです。</p>
+  </div>
+</main>
+
+<footer>MOON PARLOR — powered by Claude API</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY_STORAGE = "kanteiApiKey";
+  var stages = {
+    settings: document.getElementById("settingsStage"),
+    form: document.getElementById("formStage"),
+    loading: document.getElementById("loadingStage"),
+    result: document.getElementById("resultStage")
+  };
+  function show(name){
+    for(var k in stages){ stages[k].style.display = (k===name) ? "block" : "none"; }
+  }
+
+  function getKey(){
+    try{ return localStorage.getItem(KEY_STORAGE) || ""; }catch(e){ return ""; }
+  }
+  function setKey(v){
+    try{ localStorage.setItem(KEY_STORAGE, v); }catch(e){}
+  }
+
+  /* ===== 設定 ===== */
+  document.getElementById("gearBtn").addEventListener("click", function(){
+    document.getElementById("apiKeyInput").value = getKey();
+    show("settings");
+  });
+  document.getElementById("saveKeyBtn").addEventListener("click", function(){
+    var v = document.getElementById("apiKeyInput").value.trim();
+    if(!v){ alert("APIキーを入力してください"); return; }
+    setKey(v);
+    show("form");
+  });
+  document.getElementById("clearKeyBtn").addEventListener("click", function(){
+    try{ localStorage.removeItem(KEY_STORAGE); }catch(e){}
+    document.getElementById("apiKeyInput").value = "";
+    alert("削除しました");
+  });
+
+  /* ===== カテゴリ選択 ===== */
+  var selectedCat = "総合運";
+  document.getElementById("catRow").addEventListener("click", function(e){
+    var btn = e.target.closest(".cat");
+    if(!btn) return;
+    var all = document.querySelectorAll(".cat");
+    for(var i=0;i<all.length;i++) all[i].classList.remove("sel");
+    btn.classList.add("sel");
+    selectedCat = btn.getAttribute("data-cat");
+  });
+
+  /* ===== ローディング文言 ===== */
+  var loadingMsgs = [
+    "星の巡りを読んでいます…",
+    "生まれ持った数を紐解いています…",
+    "月の満ち欠けを確かめています…",
+    "言葉を選んでいます…"
+  ];
+  var loadingTimer = null;
+  function startLoading(){
+    var i = 0;
+    var el = document.getElementById("loadingText");
+    el.textContent = loadingMsgs[0];
+    loadingTimer = setInterval(function(){
+      i = (i+1) % loadingMsgs.length;
+      el.textContent = loadingMsgs[i];
+    }, 2200);
+  }
+  function stopLoading(){ if(loadingTimer){ clearInterval(loadingTimer); loadingTimer=null; } }
+
+  /* ===== 鑑定プロンプト ===== */
+  function buildSystemPrompt(){
+    return [
+      "あなたは「月夜の間」という鑑定処の、経験豊かで温かい占い師です。",
+      "数秘術と東洋の暦の知恵を織り交ぜた語り口で、依頼者の生年月日から読み解く形式の鑑定文を書きます。",
+      "",
+      "# 鑑定文のルール",
+      "- 全体で400〜550字程度。",
+      "- 以下の3部構成。各見出しは【】で囲む:",
+      "  【あなたの本質】生年月日から導いた性質を、具体的で当人が頷きやすい形で描写",
+      "  【" + "選ばれた運勢の流れ】相談カテゴリに沿った、今の流れと近い未来の読み",
+      "  【開運の一歩】明日からできる具体的な行動をひとつ、理由とともに",
+      "- 断定しすぎず、しかし曖昧すぎず。「〜の相が出ています」「〜の巡りにあります」のような鑑定らしい言い回しを使う。",
+      "- 必ず前向きに締める。不安を煽る表現、病気・死・災害の予言は絶対にしない。",
+      "- 医療・法律・投資の具体的助言はせず、必要なら専門家への相談をやわらかく勧める。",
+      "- 依頼者の悩みが書かれている場合は、それに寄り添う内容を必ず含める。",
+      "- 鑑定文のみを出力する。前置きや注意書きは不要。"
+    ].join("\n");
+  }
+
+  function buildUserPrompt(name, birth, cat, worry){
+    var lines = [
+      "以下の依頼者を鑑定してください。",
+      "名前: " + (name || "名無しの旅人"),
+      "生年月日: " + (birth || "非公開"),
+      "鑑定カテゴリ: " + cat
+    ];
+    if(worry) lines.push("悩み・聞きたいこと: " + worry);
+    lines.push("本日の日付: " + new Date().toLocaleDateString("ja-JP"));
+    return lines.join("\n");
+  }
+
+  /* ===== API呼び出し ===== */
+  var lastResultText = "";
+
+  async function kantei(){
+    var apiKey = getKey();
+    if(!apiKey){ show("settings"); return; }
+
+    var name = document.getElementById("nameInput").value.trim();
+    var birth = document.getElementById("birthInput").value;
+    var worry = document.getElementById("worryInput").value.trim();
+    var errBox = document.getElementById("errorBox");
+    errBox.style.display = "none";
+
+    if(!birth){
+      errBox.textContent = "生年月日を入力してください。鑑定の要です。";
+      errBox.style.display = "block";
+      return;
+    }
+
+    show("loading");
+    startLoading();
+
+    try{
+      var res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1200,
+          system: buildSystemPrompt(),
+          messages: [
+            { role: "user", content: buildUserPrompt(name, birth, selectedCat, worry) }
+          ]
+        })
+      });
+
+      if(!res.ok){
+        var errText = "";
+        try{
+          var errJson = await res.json();
+          errText = (errJson.error && errJson.error.message) ? errJson.error.message : "";
+        }catch(e){}
+        throw new Error("APIエラー(" + res.status + ")" + (errText ? ": " + errText : ""));
+      }
+
+      var data = await res.json();
+      var text = "";
+      if(data.content){
+        for(var i=0;i<data.content.length;i++){
+          if(data.content[i].type === "text") text += data.content[i].text;
+        }
+      }
+      if(!text) throw new Error("鑑定文を受け取れませんでした");
+
+      lastResultText = text;
+      renderResult(text);
+      stopLoading();
+      show("result");
+
+    }catch(err){
+      stopLoading();
+      show("form");
+      var msg = String(err && err.message || err);
+      if(msg.indexOf("401") !== -1 || msg.indexOf("authentication") !== -1){
+        msg = "APIキーが正しくないようです。⚙(右上)から設定し直してください。";
+      }else if(msg.indexOf("Failed to fetch") !== -1){
+        msg = "通信に失敗しました。電波状況をご確認ください。";
+      }
+      errBox.textContent = msg;
+      errBox.style.display = "block";
+    }
+  }
+
+  function renderResult(text){
+    var body = document.getElementById("resultBody");
+    // 【見出し】を h3 に変換(それ以外はテキストとして安全に挿入)
+    body.textContent = "";
+    var parts = text.split(/(【[^】]+】)/);
+    for(var i=0;i<parts.length;i++){
+      var p = parts[i];
+      if(!p) continue;
+      if(/^【[^】]+】$/.test(p)){
+        var h = document.createElement("h3");
+        h.textContent = p.replace(/[【】]/g,"");
+        body.appendChild(h);
+      }else{
+        var span = document.createElement("span");
+        span.textContent = p.replace(/^\n+/,"");
+        body.appendChild(span);
+      }
+    }
+  }
+
+  document.getElementById("kanteiBtn").addEventListener("click", kantei);
+
+  document.getElementById("againBtn").addEventListener("click", function(){
+    show("form");
+  });
+
+  document.getElementById("copyResultBtn").addEventListener("click", function(){
+    var btn = this;
+    var text = "【月夜の間 AI鑑定】\n" + lastResultText + "\n\n※AIによるエンターテインメント鑑定です";
+    function done(){
+      btn.textContent = "コピーしました!";
+      setTimeout(function(){ btn.textContent = "結果をコピー"; }, 1800);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done, fallback);
+    }else{ fallback(); }
+    function fallback(){
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try{ document.execCommand("copy"); done(); }catch(e){}
+      document.body.removeChild(ta);
+    }
+  });
+
+  /* ===== 初期表示 ===== */
+  if(getKey()){ show("form"); } else { show("settings"); }
+})();
+</script>
+</body>
+</html>

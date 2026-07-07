@@ -122,8 +122,67 @@
     font-size:13px;line-height:1.8;
   }
 
+  /* ===== タロット ===== */
+  .mode-row{display:flex;gap:8px;margin-bottom:16px;}
+  .mode-btn{
+    flex:1;border:1px solid rgba(201,165,78,.5);border-radius:8px;
+    padding:12px 4px;font-size:14px;font-weight:700;letter-spacing:.08em;
+    background:transparent;color:rgba(255,255,255,.75);cursor:pointer;font-family:inherit;
+  }
+  .mode-btn.sel{background:var(--gold);border-color:var(--gold);color:var(--navy-deep);}
+  #tarotStage{display:none;}
+  .tarot-guide{
+    text-align:center;font-size:14px;color:rgba(255,255,255,.85);
+    margin:18px 0 20px;line-height:1.8;letter-spacing:.05em;
+  }
+  .tarot-row{display:flex;justify-content:center;gap:12px;}
+  .tcard{
+    width:96px;height:150px;perspective:700px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .tcard-pos{
+    text-align:center;font-size:12px;color:var(--gold);
+    letter-spacing:.2em;margin-bottom:8px;font-weight:700;
+  }
+  .tcard-inner{
+    position:relative;width:100%;height:100%;
+    transform-style:preserve-3d;transition:transform .7s cubic-bezier(.3,1.2,.4,1);
+  }
+  .tcard.flipped .tcard-inner{transform:rotateY(180deg);}
+  @media (prefers-reduced-motion: reduce){ .tcard-inner{transition:none;} }
+  .tface{
+    position:absolute;inset:0;border-radius:10px;
+    backface-visibility:hidden;-webkit-backface-visibility:hidden;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  }
+  .tback{
+    background:
+      radial-gradient(circle at 50% 42%, rgba(201,165,78,.5), transparent 46%),
+      linear-gradient(135deg,#22406f,#101E38);
+    border:2px solid var(--gold);
+  }
+  .tback::after{content:"月";font-family:"Yu Mincho",serif;font-size:30px;color:var(--gold);opacity:.85;}
+  .tfront{
+    background:var(--washi);color:var(--navy);
+    border:2px solid var(--gold);
+    transform:rotateY(180deg);
+    padding:8px 4px;text-align:center;
+  }
+  .tfront .tnum{font-size:11px;letter-spacing:.15em;color:var(--orange);font-weight:700;}
+  .tfront .tsym{font-size:34px;margin:6px 0;}
+  .tfront .tname{font-size:12px;font-weight:700;line-height:1.4;}
+  .tfront .trev{
+    margin-top:5px;font-size:10px;padding:1px 8px;border-radius:8px;
+    background:var(--navy);color:#fff;letter-spacing:.1em;
+  }
+  .tfront.reversed .tsym,.tfront.reversed .tname,.tfront.reversed .tnum{
+    transform:rotate(180deg);
+  }
+  #tarotGoBtn{display:none;}
+
   /* 設定 */
   #settingsStage{display:none;}
+
   .note{font-size:12px;color:rgba(255,255,255,.65);line-height:1.9;margin-top:10px;}
   .gear{
     position:absolute;top:18px;right:16px;background:none;border:none;
@@ -162,10 +221,15 @@
   <!-- ===== 入力 ===== -->
   <div id="formStage">
     <div class="card">
+      <div class="mode-row">
+        <button class="mode-btn sel" data-mode="seimei" id="modeSeimei">生年月日鑑定</button>
+        <button class="mode-btn" data-mode="tarot" id="modeTarot">タロット3枚引き</button>
+      </div>
+
       <label>お名前(呼び名でOK)</label>
       <input type="text" id="nameInput" placeholder="例:さちお" maxlength="20">
 
-      <label>生年月日</label>
+      <label id="birthLabel">生年月日</label>
       <input type="date" id="birthInput">
 
       <label>鑑定したいこと</label>
@@ -177,6 +241,12 @@
         <button class="cat" data-cat="健康運">健康運</button>
       </div>
 
+      <label>鑑定の口調</label>
+      <div class="cat-row" id="toneRow">
+        <button class="cat" data-tone="やさしめ">やさしめ</button>
+        <button class="cat sel" data-tone="辛口">辛口</button>
+      </div>
+
       <label>お悩み・聞きたいこと(任意)</label>
       <textarea id="worryInput" placeholder="例:新しいことを始めるか迷っています"></textarea>
 
@@ -184,6 +254,14 @@
       <div class="error-box" id="errorBox"></div>
     </div>
     <p class="disclaimer">本鑑定はAIによるエンターテインメントです。<br>重要な決定はご自身の判断と、必要に応じて専門家への相談をおすすめします。</p>
+  </div>
+
+  <!-- ===== タロット引き ===== -->
+  <div id="tarotStage">
+    <p class="tarot-guide">心の中で問いを思い浮かべながら、<br>3枚のカードを順にめくってください。</p>
+    <div class="tarot-row" id="tarotRow"></div>
+    <button class="btn-main" id="tarotGoBtn" style="margin-top:24px;">この3枚で鑑定する</button>
+    <button class="btn-sub" id="tarotBackBtn">入力に戻る</button>
   </div>
 
   <!-- ===== 鑑定中 ===== -->
@@ -214,6 +292,7 @@
   var stages = {
     settings: document.getElementById("settingsStage"),
     form: document.getElementById("formStage"),
+    tarot: document.getElementById("tarotStage"),
     loading: document.getElementById("loadingStage"),
     result: document.getElementById("resultStage")
   };
@@ -256,6 +335,119 @@
     selectedCat = btn.getAttribute("data-cat");
   });
 
+  /* ===== 口調選択 ===== */
+  var selectedTone = "辛口";
+  document.getElementById("toneRow").addEventListener("click", function(e){
+    var btn = e.target.closest(".cat");
+    if(!btn) return;
+    var all = document.querySelectorAll("#toneRow .cat");
+    for(var i=0;i<all.length;i++) all[i].classList.remove("sel");
+    btn.classList.add("sel");
+    selectedTone = btn.getAttribute("data-tone");
+  });
+
+  /* ===== モード切替 ===== */
+  var selectedMode = "seimei";
+  function setMode(mode){
+    selectedMode = mode;
+    document.getElementById("modeSeimei").classList.toggle("sel", mode==="seimei");
+    document.getElementById("modeTarot").classList.toggle("sel", mode==="tarot");
+    document.getElementById("birthLabel").textContent =
+      mode==="tarot" ? "生年月日(タロットでは任意)" : "生年月日";
+    document.getElementById("kanteiBtn").textContent =
+      mode==="tarot" ? "カ ー ド を 引 く" : "鑑 定 す る";
+  }
+  document.getElementById("modeSeimei").addEventListener("click", function(){ setMode("seimei"); });
+  document.getElementById("modeTarot").addEventListener("click", function(){ setMode("tarot"); });
+
+  /* ===== タロット:大アルカナ22枚 ===== */
+  var ARCANA = [
+    ["0","愚者","🎒"],["I","魔術師","✨"],["II","女教皇","📜"],["III","女帝","🌹"],
+    ["IV","皇帝","🏰"],["V","教皇","🔔"],["VI","恋人","💞"],["VII","戦車","🐎"],
+    ["VIII","力","🦁"],["IX","隠者","🏮"],["X","運命の輪","🎡"],["XI","正義","⚖️"],
+    ["XII","吊るされた男","🙃"],["XIII","死神","🌑"],["XIV","節制","🏺"],["XV","悪魔","⛓️"],
+    ["XVI","塔","🌩️"],["XVII","星","⭐"],["XVIII","月","🌙"],["XIX","太陽","☀️"],
+    ["XX","審判","🎺"],["XXI","世界","🌍"]
+  ];
+  var POSITIONS = ["過去","現在","未来"];
+  var drawnCards = [];   // {num,name,sym,reversed,pos}
+  var flippedCount = 0;
+
+  function setupTarot(){
+    // 重複なしで3枚抽選
+    var idx = [], pool = [];
+    for(var i=0;i<ARCANA.length;i++) pool.push(i);
+    for(var j=0;j<3;j++){
+      var r = Math.floor(Math.random()*pool.length);
+      idx.push(pool.splice(r,1)[0]);
+    }
+    drawnCards = idx.map(function(i,n){
+      return {
+        num:ARCANA[i][0], name:ARCANA[i][1], sym:ARCANA[i][2],
+        reversed: Math.random()<0.5, pos:POSITIONS[n]
+      };
+    });
+    flippedCount = 0;
+    document.getElementById("tarotGoBtn").style.display = "none";
+
+    var row = document.getElementById("tarotRow");
+    row.textContent = "";
+    drawnCards.forEach(function(c, n){
+      var wrap = document.createElement("div");
+      var pos = document.createElement("div");
+      pos.className = "tcard-pos";
+      pos.textContent = c.pos;
+      var card = document.createElement("div");
+      card.className = "tcard";
+      card.setAttribute("role","button");
+      card.setAttribute("aria-label", c.pos + "のカードをめくる");
+
+      var inner = document.createElement("div");
+      inner.className = "tcard-inner";
+      var back = document.createElement("div");
+      back.className = "tface tback";
+      var front = document.createElement("div");
+      front.className = "tface tfront" + (c.reversed ? " reversed" : "");
+
+      var numEl = document.createElement("div");
+      numEl.className = "tnum"; numEl.textContent = c.num;
+      var symEl = document.createElement("div");
+      symEl.className = "tsym"; symEl.textContent = c.sym;
+      var nameEl = document.createElement("div");
+      nameEl.className = "tname"; nameEl.textContent = c.name;
+      front.appendChild(numEl); front.appendChild(symEl); front.appendChild(nameEl);
+      if(c.reversed){
+        var rev = document.createElement("div");
+        rev.className = "trev"; rev.textContent = "逆位置";
+        front.appendChild(rev);
+      }
+      inner.appendChild(back); inner.appendChild(front);
+      card.appendChild(inner);
+
+      card.addEventListener("click", function(){
+        if(card.classList.contains("flipped")) return;
+        card.classList.add("flipped");
+        flippedCount++;
+        if(flippedCount === 3){
+          setTimeout(function(){
+            document.getElementById("tarotGoBtn").style.display = "block";
+          }, 700);
+        }
+      });
+
+      wrap.appendChild(pos);
+      wrap.appendChild(card);
+      row.appendChild(wrap);
+    });
+  }
+
+  document.getElementById("tarotBackBtn").addEventListener("click", function(){
+    show("form");
+  });
+  document.getElementById("tarotGoBtn").addEventListener("click", function(){
+    runKantei();
+  });
+
   /* ===== ローディング文言 ===== */
   var loadingMsgs = [
     "星の巡りを読んでいます…",
@@ -276,23 +468,43 @@
   function stopLoading(){ if(loadingTimer){ clearInterval(loadingTimer); loadingTimer=null; } }
 
   /* ===== 鑑定プロンプト ===== */
-  function buildSystemPrompt(){
-    return [
-      "あなたは「月夜の間」という鑑定処の、経験豊かで温かい占い師です。",
+  function buildSystemPrompt(tone){
+    var common = [
+      "あなたは「月夜の間」という鑑定処の、経験豊かな占い師です。",
       "数秘術と東洋の暦の知恵を織り交ぜた語り口で、依頼者の生年月日から読み解く形式の鑑定文を書きます。",
       "",
-      "# 鑑定文のルール",
-      "- 全体で400〜550字程度。",
-      "- 以下の3部構成。各見出しは【】で囲む:",
-      "  【あなたの本質】生年月日から導いた性質を、具体的で当人が頷きやすい形で描写",
-      "  【" + "選ばれた運勢の流れ】相談カテゴリに沿った、今の流れと近い未来の読み",
-      "  【開運の一歩】明日からできる具体的な行動をひとつ、理由とともに",
-      "- 断定しすぎず、しかし曖昧すぎず。「〜の相が出ています」「〜の巡りにあります」のような鑑定らしい言い回しを使う。",
-      "- 必ず前向きに締める。不安を煽る表現、病気・死・災害の予言は絶対にしない。",
-      "- 医療・法律・投資の具体的助言はせず、必要なら専門家への相談をやわらかく勧める。",
-      "- 依頼者の悩みが書かれている場合は、それに寄り添う内容を必ず含める。",
+      "# 共通ルール",
+      "- 「〜の相が出ています」「〜の巡りにあります」のような鑑定らしい言い回しを使う。",
+      "- 病気・死・災害・事故の予言は絶対にしない。健康カテゴリでも症状や病名には触れず、生活習慣の姿勢のみを扱う。",
+      "- 医療・法律・投資の具体的助言はせず、必要なら専門家への相談を勧める。",
+      "- 依頼者の悩みが書かれている場合は、それに正面から向き合う内容を必ず含める。",
       "- 鑑定文のみを出力する。前置きや注意書きは不要。"
-    ].join("\n");
+    ];
+    if(tone === "辛口"){
+      return common.concat([
+        "",
+        "# 口調:辛口モード",
+        "あなたは滅多に人を褒めないことで知られる辛口の鑑定士です。お世辞や気休めを言わないからこそ、依頼者が絶えない。",
+        "- 全体で450〜600字程度。以下の4部構成。各見出しは【】で囲む:",
+        "  【あなたの本質】長所だけでなく、その裏返しの短所・悪い癖まで踏み込んで描写",
+        "  【厳しくお伝えします】依頼者が目を逸らしている甘さ・停滞の原因を率直に指摘。このまま放置すると何を失うかまで言い切る",
+        "  【運勢の流れ】相談カテゴリに沿った読み。良い流れも悪い流れも脚色せずに伝える",
+        "  【それでも道はある】厳しい指摘を踏まえた、明日からできる具体的な行動をひとつ。突き放さず、最後は背中を押す",
+        "- 遠慮のない断定口調を使う。「耳の痛い話をしますが」「はっきり申し上げます」など。",
+        "- ただし人格の否定・侮辱・容姿への言及はしない。厳しさは行動と姿勢に向ける。",
+        "- 不安を煽って終わらない。厳しさの後に必ず出口を示す。"
+      ]).join("\n");
+    }
+    return common.concat([
+      "",
+      "# 口調:やさしめモード",
+      "あなたは温かく寄り添う鑑定士です。",
+      "- 全体で400〜550字程度。以下の3部構成。各見出しは【】で囲む:",
+      "  【あなたの本質】生年月日から導いた性質を、具体的で当人が頷きやすい形で描写",
+      "  【運勢の流れ】相談カテゴリに沿った、今の流れと近い未来の読み",
+      "  【開運の一歩】明日からできる具体的な行動をひとつ、理由とともに",
+      "- 断定しすぎず、しかし曖昧すぎず。必ず前向きに締める。"
+    ]).join("\n");
   }
 
   function buildUserPrompt(name, birth, cat, worry){
@@ -307,10 +519,85 @@
     return lines.join("\n");
   }
 
+  /* ===== タロット用プロンプト ===== */
+  function buildTarotSystemPrompt(tone){
+    var common = [
+      "あなたは「月夜の間」という鑑定処のタロット占い師です。",
+      "依頼者が引いた大アルカナ3枚(過去・現在・未来)のスプレッドを読み解きます。",
+      "",
+      "# 共通ルール",
+      "- 全体で500〜650字程度。以下の構成。見出しは【】で囲む:",
+      "  【過去 ― カード名(正位置/逆位置)】",
+      "  【現在 ― カード名(正位置/逆位置)】",
+      "  【未来 ― カード名(正位置/逆位置)】",
+      "  【総合鑑定】3枚の流れを一つの物語として結び、相談カテゴリと悩みに答える",
+      "- 各カードは伝統的なタロットの象意(正位置・逆位置)に忠実に読む。",
+      "- 死神・塔・悪魔などのカードは「変容」「手放し」「執着」といった伝統的解釈で読み、現実の死・事故・災害の予言には絶対にしない。",
+      "- 医療・法律・投資の具体的助言はせず、必要なら専門家への相談を勧める。",
+      "- 3枚の組み合わせから生まれる固有のストーリーを重視し、汎用的な文章にしない。",
+      "- 鑑定文のみを出力する。前置きや注意書きは不要。"
+    ];
+    if(tone === "辛口"){
+      return common.concat([
+        "",
+        "# 口調:辛口モード",
+        "あなたはカードが示す不都合な真実から目を逸らさない、辛口の読み手です。",
+        "- 逆位置や試練のカードが出たら、和らげずにその意味を率直に伝える。",
+        "- 【総合鑑定】では「カードははっきり示しています」のような断定口調で、依頼者の甘さや停滞の原因を指摘する。",
+        "- ただし人格の否定・侮辱はしない。厳しさは行動と姿勢に向ける。",
+        "- 最後は必ず、カードが示す出口・打開の行動をひとつ具体的に示して締める。"
+      ]).join("\n");
+    }
+    return common.concat([
+      "",
+      "# 口調:やさしめモード",
+      "あなたは温かく寄り添う読み手です。",
+      "- 試練のカードも成長の機会として前向きに読み解く。",
+      "- 【総合鑑定】は希望が持てる形で締め、明日からできる小さな一歩を添える。"
+    ]).join("\n");
+  }
+
+  function buildTarotUserPrompt(name, birth, cat, worry, cards){
+    var lines = [
+      "以下の依頼者のタロット3枚引きを鑑定してください。",
+      "名前: " + (name || "名無しの旅人"),
+      (birth ? "生年月日: " + birth : ""),
+      "鑑定カテゴリ: " + cat,
+      "",
+      "引いたカード:"
+    ];
+    cards.forEach(function(c){
+      lines.push("- " + c.pos + ": " + c.name + "(" + (c.reversed ? "逆位置" : "正位置") + ")");
+    });
+    if(worry) lines.push("", "悩み・聞きたいこと: " + worry);
+    lines.push("本日の日付: " + new Date().toLocaleDateString("ja-JP"));
+    return lines.filter(function(l){ return l !== ""; }).join("\n");
+  }
+
   /* ===== API呼び出し ===== */
   var lastResultText = "";
 
-  async function kantei(){
+  function onKanteiBtn(){
+    var apiKey = getKey();
+    if(!apiKey){ show("settings"); return; }
+    var errBox = document.getElementById("errorBox");
+    errBox.style.display = "none";
+
+    if(selectedMode === "tarot"){
+      setupTarot();
+      show("tarot");
+      return;
+    }
+    var birth = document.getElementById("birthInput").value;
+    if(!birth){
+      errBox.textContent = "生年月日を入力してください。鑑定の要です。";
+      errBox.style.display = "block";
+      return;
+    }
+    runKantei();
+  }
+
+  async function runKantei(){
     var apiKey = getKey();
     if(!apiKey){ show("settings"); return; }
 
@@ -320,10 +607,13 @@
     var errBox = document.getElementById("errorBox");
     errBox.style.display = "none";
 
-    if(!birth){
-      errBox.textContent = "生年月日を入力してください。鑑定の要です。";
-      errBox.style.display = "block";
-      return;
+    var systemPrompt, userPrompt;
+    if(selectedMode === "tarot"){
+      systemPrompt = buildTarotSystemPrompt(selectedTone);
+      userPrompt = buildTarotUserPrompt(name, birth, selectedCat, worry, drawnCards);
+    }else{
+      systemPrompt = buildSystemPrompt(selectedTone);
+      userPrompt = buildUserPrompt(name, birth, selectedCat, worry);
     }
 
     show("loading");
@@ -340,10 +630,10 @@
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1200,
-          system: buildSystemPrompt(),
+          max_tokens: 1400,
+          system: systemPrompt,
           messages: [
-            { role: "user", content: buildUserPrompt(name, birth, selectedCat, worry) }
+            { role: "user", content: userPrompt }
           ]
         })
       });
@@ -375,7 +665,9 @@
       stopLoading();
       show("form");
       var msg = String(err && err.message || err);
-      if(msg.indexOf("401") !== -1 || msg.indexOf("authentication") !== -1){
+      if(msg.indexOf("Invalid response format") !== -1){
+        msg = "この画面はClaudeアプリ内のプレビューのため、鑑定は動作しません。SafariでGitHub PagesのURL(sachio0716-coder.github.io/guard-system2/ai-kantei.html)を開いてください。";
+      }else if(msg.indexOf("401") !== -1 || msg.indexOf("authentication") !== -1){
         msg = "APIキーが正しくないようです。⚙(右上)から設定し直してください。";
       }else if(msg.indexOf("Failed to fetch") !== -1){
         msg = "通信に失敗しました。電波状況をご確認ください。";
@@ -405,7 +697,7 @@
     }
   }
 
-  document.getElementById("kanteiBtn").addEventListener("click", kantei);
+  document.getElementById("kanteiBtn").addEventListener("click", onKanteiBtn);
 
   document.getElementById("againBtn").addEventListener("click", function(){
     show("form");

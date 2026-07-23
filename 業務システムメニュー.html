@@ -1,0 +1,166 @@
+!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>越前警備 業務システム メニュー</title>
+<style>
+  :root{
+    --navy:#1F3864; --navy2:#2b4a7a; --orange:#E8730C; --orange-l:#fff3e6;
+    --gray:#667; --line:#dfe4ec; --bg:#f4f6fa; --card:#fff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:"Meiryo","Hiragino Kaku Gothic ProN",system-ui,sans-serif;background:var(--bg);color:#222;line-height:1.6;padding-bottom:50px}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:18px 16px 20px;box-shadow:0 2px 10px rgba(0,0,0,.15);position:sticky;top:0;z-index:20}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 14px}
+  header h1{font-size:19px;font-weight:700;letter-spacing:.5px}
+  header .sub{font-size:12px;opacity:.85;margin-top:2px}
+  .tools{display:flex;gap:8px;margin-top:12px}
+  #q{flex:1;border:none;border-radius:10px;padding:11px 14px;font-size:15px;font-family:inherit;outline:none}
+  .gear{background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:10px;padding:0 14px;font-size:17px;cursor:pointer}
+  .gear.on{background:var(--orange)}
+ 
+  .sec{margin:22px auto 0}
+  .sec h2{font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-left:2px}
+  .sec h2 .n{font-size:11px;color:#fff;background:var(--orange);border-radius:20px;padding:1px 9px;font-weight:400}
+ 
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:11px}
+  .card{background:var(--card);border-radius:13px;padding:14px 15px;box-shadow:0 1px 4px rgba(30,50,90,.08);
+        border-left:5px solid var(--orange);display:flex;flex-direction:column;gap:5px;text-decoration:none;color:inherit;transition:.15s}
+  a.card:hover{transform:translateY(-2px);box-shadow:0 5px 14px rgba(30,50,90,.16)}
+  .card.pc{border-left-color:var(--navy);opacity:.94}
+  .card.doc{border-left-color:#8a9ab5}
+  .card.off{border-left-color:#c8cede}
+  .ttl{font-size:15px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .ttl .ico{font-size:18px}
+  .desc{font-size:12px;color:var(--gray)}
+  .tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px}
+  .tag{font-size:10.5px;border-radius:5px;padding:1px 7px;background:#eef2f8;color:var(--navy)}
+  .tag.w{background:#e6f2e8;color:#2E7D32}
+  .tag.s{background:var(--orange-l);color:var(--orange)}
+  .tag.p{background:#eceff5;color:#4a5a78}
+  .tag.a{background:#fdeaea;color:#b03030}
+  .where{font-size:11px;color:#98a2b3;margin-top:2px}
+  .nourl{font-size:11px;color:#b9814a}
+ 
+  .edit{display:none;margin-top:8px}
+  body.editing .edit{display:block}
+  .edit input{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12px;font-family:inherit}
+  body.editing a.card{pointer-events:none}
+  .hint{background:var(--orange-l);border-radius:10px;padding:11px 14px;font-size:12.5px;margin:14px auto 0;display:none}
+  body.editing .hint{display:block}
+ 
+  footer{text-align:center;color:#98a2b3;font-size:11px;margin-top:30px}
+  .empty{text-align:center;color:#98a2b3;font-size:13px;padding:30px 0;display:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>🛡 越前警備 業務システム メニュー</h1>
+    <div class="sub">指導教育責任者・事務まわりのツール一覧</div>
+    <div class="tools">
+      <input id="q" type="search" placeholder="🔍 探す（例：契約、教育、片交）">
+      <button class="gear" id="gear" title="リンクを設定">⚙</button>
+    </div>
+  </div>
+</header>
+ 
+<div class="wrap">
+  <div class="hint" id="hint">
+    <b>リンク設定モード</b>：各カードの入力欄にURLを貼り付けると、この端末に保存されます。GoogleスプレッドシートやフォームのURLをここに登録しておくと、次からワンタップで開けます。終わったら右上の⚙をもう一度押してください。
+  </div>
+  <div id="secs"></div>
+  <div class="empty" id="empty">該当するものがありません</div>
+  <footer>越前警備株式会社　業務システムメニュー　｜　令和8年7月</footer>
+</div>
+ 
+<script>
+var BASE = 'https://sachio0716-coder.github.io/guard-system2/';
+var DATA = [
+ {cat:'📋 法定書類・記録管理', items:[
+  {id:'kigen', ico:'🔔', t:'期限アラート台帳', d:'写真更新・認定証・保険などの期限を毎朝チェックしてメール通知', tags:[['自動','a'],['Web','w']], url:''},
+  {id:'kyouiku', ico:'📚', t:'教育記録台帳', d:'教育計画と実施簿の整合チェック。現任教育の受講状況を毎月自動集計', tags:[['自動','a'],['Web','w']], url:''},
+  {id:'form', ico:'📱', t:'指導記録フォーム（現場入力）', d:'指導を実施したらスマホで入力。実施簿の表記に自動変換される', tags:[['スマホ','s'],['Web','w']], url:''},
+  {id:'formss', ico:'📊', t:'指導記録フォーム 回答', d:'フォームの回答一覧。月末に「貼付用シートを作成」を実行', tags:[['Web','w']], url:''},
+  {id:'keiyaku', ico:'📄', t:'契約管理', d:'契約マスターから月別契約一覧と契約書面を自動作成', tags:[['PCのExcel','p']], file:'越前警備_契約管理_整理済.xlsm'},
+  {id:'shidou', ico:'📝', t:'指導管理', d:'指導マスターから指導計画書と指導実施簿を自動作成', tags:[['PCのExcel','p']], file:'指導管理.xlsm'},
+  {id:'tenken', ico:'✅', t:'立入検査 自主点検', d:'29項目のチェックリスト。進捗が円グラフで見える', tags:[['Web','w'],['スマホ','s']], url:BASE+'立入検査_自主点検ダッシュボード.html'},
+  {id:'tenkenx', ico:'🗒', t:'立入検査 自主点検（Excel版）', d:'チェックすると達成率が自動計算。備考に指摘事項を記録できる', tags:[['PCのExcel','p']], file:'立入検査_自主点検.xlsx'},
+ ]},
+ {cat:'🚧 現場・配置', items:[
+  {id:'gs2', ico:'👷', t:'配置管理システム', d:'依頼受付・自動割当・不足検知・出欠確認・地図リンク', tags:[['Web','w'],['スマホ','s']], url:BASE},
+  {id:'haichi', ico:'💬', t:'配置連絡メッセージ作成', d:'LINE WORKS用の配置連絡文をワンタップでコピー', tags:[['スマホ','s']], url:BASE+'keibiin-haichi_3.html'},
+  {id:'status', ico:'📌', t:'指導状況ビューア', d:'警備員ごとの指導記録の件数・状況を確認', tags:[['スマホ','s']], url:BASE+'shidou-status.html'},
+  {id:'dash', ico:'🌤', t:'日次ダッシュボード', d:'天気・熱中症アラート・出勤人数・TODO。毎営業日に生成', tags:[['Web','w']], url:''},
+ ]},
+ {cat:'🎓 教育・訓練ツール', items:[
+  {id:'katakou', ico:'🚦', t:'片交シミュレーター', d:'片側交互通行の無線要領を反復訓練。ミッションモード付き', tags:[['スマホ','s'],['訓練','']], url:BASE+'katakou-simple.html'},
+  {id:'mikuji', ico:'🎋', t:'安全みくじ', d:'1日1回引ける交通誘導の心得18種。朝礼のきっかけに', tags:[['スマホ','s']], url:BASE+'anzen-mikuji.html'},
+  {id:'skill', ico:'📈', t:'個人別スキル育成マトリクス', d:'8分野×5段階で警備員のスキルを可視化', tags:[['PCのExcel','p']], file:'スキル育成マトリクス v2'},
+  {id:'kyozai', ico:'📖', t:'教材ライブラリ', d:'新任20時間・現任10時間の教材一式、片交／車線規制シリーズ', tags:[['資料','']], file:'教材フォルダ（PPTX・Word）'},
+ ]},
+ {cat:'📁 資料・手順書', items:[
+  {id:'sougou', ico:'📘', t:'業務システム 総合手順書', d:'5つのシステムの使い方と、いつ何をするかのカレンダー', tags:[['資料','']], file:'業務システム総合手順書.docx'},
+  {id:'m1', ico:'📗', t:'契約管理 操作手順書【完全版】', d:'契約マスター方式の全手順とFAQ', tags:[['資料','']], file:'契約管理システム操作手順書_完全版.docx'},
+  {id:'m2', ico:'📙', t:'指導管理 操作手順書', d:'計画書・実施簿の作り方とFAQ', tags:[['資料','']], file:'指導管理システム操作手順書.docx'},
+  {id:'gaiyo', ico:'🏢', t:'会社概要', d:'令和8年7月1日現在の会社案内', tags:[['資料','']], file:'越前警備_会社概要_R8.7.1.docx'},
+ ]},
+];
+ 
+var KEY='echizen_menu_urls_v1';
+var saved={};
+try{ saved=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){ saved={}; }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(saved)); }catch(e){} }
+ 
+function urlOf(it){ return (saved[it.id]!==undefined && saved[it.id]!=='') ? saved[it.id] : (it.url||''); }
+ 
+function render(filter){
+  var box=document.getElementById('secs'); box.innerHTML=''; var shown=0;
+  filter=(filter||'').trim();
+  DATA.forEach(function(sec){
+    var items=sec.items.filter(function(it){
+      if(!filter) return true;
+      return (it.t+it.d+(it.file||'')).indexOf(filter)>=0;
+    });
+    if(items.length===0) return;
+    shown+=items.length;
+    var s=document.createElement('div'); s.className='sec';
+    var cards=items.map(function(it){
+      var u=urlOf(it);
+      var isLink=!!u;
+      var cls='card'+(it.file?' pc':'')+(!isLink&&!it.file?' off':'');
+      if(it.tags && it.tags[0] && it.tags[0][0]==='資料') cls='card doc';
+      var tagHtml=(it.tags||[]).map(function(t){return '<span class="tag '+(t[1]||'')+'">'+t[0]+'</span>';}).join('');
+      var body='<div class="ttl"><span class="ico">'+it.ico+'</span>'+it.t+'</div>'
+             + '<div class="desc">'+it.d+'</div>'
+             + '<div class="tags">'+tagHtml+'</div>'
+             + (it.file?'<div class="where">📂 '+it.file+'</div>':'')
+             + (!it.file&&!isLink?'<div class="nourl">⚙ からURLを登録してください</div>':'')
+             + '<div class="edit"><input type="url" placeholder="URLを貼り付け" value="'+(saved[it.id]||'')+'" data-id="'+it.id+'"></div>';
+      if(isLink){
+        return '<a class="'+cls+'" href="'+u+'" target="_blank" rel="noopener">'+body+'</a>';
+      }
+      return '<div class="'+cls+'">'+body+'</div>';
+    }).join('');
+    s.innerHTML='<h2>'+sec.cat+'<span class="n">'+items.length+'</span></h2><div class="grid">'+cards+'</div>';
+    box.appendChild(s);
+  });
+  document.getElementById('empty').style.display = shown?'none':'block';
+  Array.prototype.forEach.call(document.querySelectorAll('.edit input'),function(inp){
+    inp.addEventListener('change',function(){
+      saved[this.dataset.id]=this.value.trim(); save();
+      render(document.getElementById('q').value);
+      document.body.classList.add('editing');
+    });
+  });
+}
+document.getElementById('q').addEventListener('input',function(){ render(this.value); });
+document.getElementById('gear').addEventListener('click',function(){
+  document.body.classList.toggle('editing');
+  this.classList.toggle('on');
+});
+render('');
+</script>
+</body>
+</html>
